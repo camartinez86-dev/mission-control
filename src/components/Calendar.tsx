@@ -1,18 +1,44 @@
+"use client";
+
+import { useState, useEffect } from "react";
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  date: string;
+  time: string | null;
+  type: string;
+}
+
 export default function Calendar() {
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/events")
+      .then((res) => res.json())
+      .then((data) => {
+        setEvents(data.events || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
   const today = new Date();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).getDay();
 
-  const events = [
-    { day: 25, title: "Haircut", time: "9-10 AM" },
-    { day: 25, title: "R&B Wednesdays", time: "6:30-7:30 PM" },
-    { day: 26, title: "Tire Swap", time: "7-8 AM" },
-    { day: 27, title: "Payroll Due (P8)", time: "9 AM" },
-    { day: 30, title: "Tesla Service", time: "12:45 PM" },
-  ];
-
   const monthNames = ["January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"];
+
+  const getEventsForDay = (day: number) => {
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    return events.filter((e) => e.date === dateStr);
+  };
+
+  if (loading) {
+    return <div className="text-gray-400">Loading calendar...</div>;
+  }
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">
@@ -33,13 +59,13 @@ export default function Calendar() {
         
         {Array.from({ length: daysInMonth }, (_, i) => {
           const day = i + 1;
-          const dayEvents = events.filter((e) => e.day === day);
+          const dayEvents = getEventsForDay(day);
           const isToday = day === today.getDate();
           
           return (
             <div
               key={day}
-              className={`h-20 p-1 border border-gray-700 rounded ${
+              className={`h-20 p-1 border border-gray-700 rounded overflow-auto ${
                 isToday ? "bg-blue-900/30 border-blue-500" : "bg-gray-700"
               }`}
             >
@@ -52,6 +78,9 @@ export default function Calendar() {
                     {e.title}
                   </div>
                 ))}
+                {dayEvents.length > 2 && (
+                  <div className="text-xs text-gray-400">+{dayEvents.length - 2} more</div>
+                )}
               </div>
             </div>
           );
