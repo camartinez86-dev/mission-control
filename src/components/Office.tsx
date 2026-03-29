@@ -1,7 +1,9 @@
 export default function Office() {
   // Simple 8x8 pixel office grid
-  const grid = Array(8).fill(null).map(() => Array(8).fill("empty"));
-  
+  const grid = Array(8)
+    .fill(null)
+    .map(() => Array(8).fill("empty"));
+
   // Place some desks and agents
   const desks = [
     { x: 1, y: 1, occupant: "Main Agent", emoji: "🤖" },
@@ -10,7 +12,7 @@ export default function Office() {
     { x: 5, y: 5, occupant: "Docs Bot", emoji: "📄" },
   ];
 
-  desks.forEach(({ x, y, emoji }) => {
+  desks.forEach(({ x, y }) => {
     grid[y][x] = "desk";
   });
 
@@ -27,7 +29,7 @@ export default function Office() {
           2D pixel art visualization of agents at work
         </p>
 
-        <div 
+        <div
           className="grid gap-1 mx-auto w-fit"
           style={{ gridTemplateColumns: "repeat(8, 48px)" }}
         >
@@ -41,13 +43,16 @@ export default function Office() {
               >
                 {getCellContent(x, y)}
               </div>
-            ))
+            )),
           )}
         </div>
 
         <div className="mt-6 flex flex-wrap gap-4 justify-center">
           {desks.map((desk, idx) => (
-            <div key={idx} className="flex items-center gap-2 bg-gray-700 px-3 py-2 rounded">
+            <div
+              key={idx}
+              className="flex items-center gap-2 bg-gray-700 px-3 py-2 rounded"
+            >
               <span>{desk.emoji}</span>
               <span className="text-sm">{desk.occupant}</span>
             </div>

@@ -29,14 +29,21 @@ export default function Projects() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {projects.map((project) => (
-        <div key={project.id} className="bg-gray-800 rounded-lg p-5 border border-gray-700">
+        <div
+          key={project.id}
+          className="bg-gray-800 rounded-lg p-5 border border-gray-700"
+        >
           <div className="flex justify-between items-start mb-3">
             <h3 className="font-bold text-lg">{project.name}</h3>
-            <span className={`text-xs px-2 py-1 rounded ${
-              project.status === "in-progress" ? "bg-blue-900 text-blue-300" :
-              project.status === "planning" ? "bg-purple-900 text-purple-300" :
-              "bg-gray-600 text-gray-300"
-            }`}>
+            <span
+              className={`text-xs px-2 py-1 rounded ${
+                project.status === "in-progress"
+                  ? "bg-blue-900 text-blue-300"
+                  : project.status === "planning"
+                    ? "bg-purple-900 text-purple-300"
+                    : "bg-gray-600 text-gray-300"
+              }`}
+            >
               {project.status}
             </span>
           </div>
@@ -45,7 +52,9 @@ export default function Projects() {
             <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
               <div
                 className="h-full bg-blue-500 transition-all"
-                style={{ width: `${(project.completed / project.tasks) * 100}%` }}
+                style={{
+                  width: `${(project.completed / project.tasks) * 100}%`,
+                }}
               />
             </div>
             <span className="text-sm text-gray-400">

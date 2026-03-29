@@ -25,17 +25,22 @@ export default function Docs() {
       .catch(() => setLoading(false));
   }, []);
 
-  const filteredDocs = docs.filter((d) =>
-    d.name.toLowerCase().includes(search.toLowerCase()) ||
-    d.path.toLowerCase().includes(search.toLowerCase())
+  const filteredDocs = docs.filter(
+    (d) =>
+      d.name.toLowerCase().includes(search.toLowerCase()) ||
+      d.path.toLowerCase().includes(search.toLowerCase()),
   );
 
   const getIcon = (type: string) => {
     switch (type) {
-      case "md": return "📝";
-      case "json": return "📋";
-      case "yaml": return "⚙️";
-      default: return "📄";
+      case "md":
+        return "📝";
+      case "json":
+        return "📋";
+      case "yaml":
+        return "⚙️";
+      default:
+        return "📄";
     }
   };
 
@@ -61,7 +66,10 @@ export default function Docs() {
           <p className="text-gray-500 col-span-2">No documents found</p>
         ) : (
           filteredDocs.map((doc, idx) => (
-            <div key={idx} className="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-colors flex items-center gap-4">
+            <div
+              key={idx}
+              className="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-colors flex items-center gap-4"
+            >
               <div className="text-2xl">{getIcon(doc.type)}</div>
               <div className="flex-1">
                 <h3 className="font-medium">{doc.name}</h3>

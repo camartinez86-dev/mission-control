@@ -2,25 +2,37 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
+interface Doc {
+  name: string;
+  path: string;
+  size: string;
+  type: string;
+  preview: string;
+}
+
 export async function GET() {
   try {
     const workspaceDir = "/root/.openclaw/workspace";
-    const docs: any[] = [];
+    const docs: Doc[] = [];
 
     const allowedExtensions = [".md", ".txt", ".json", ".yaml", ".yml"];
 
     function scanDir(dir: string) {
       if (!fs.existsSync(dir)) return;
-      
+
       const items = fs.readdirSync(dir, { withFileTypes: true });
       for (const item of items) {
         const fullPath = path.join(dir, item.name);
-        
+
         // Skip hidden and special directories
-        if (item.name.startsWith(".") || item.name === "node_modules" || item.name === ".git") {
+        if (
+          item.name.startsWith(".") ||
+          item.name === "node_modules" ||
+          item.name === ".git"
+        ) {
           continue;
         }
-        
+
         if (item.isDirectory()) {
           scanDir(fullPath);
         } else if (item.isFile()) {

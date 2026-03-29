@@ -34,13 +34,16 @@ export default function Team() {
         <p className="text-gray-400 mb-6">
           OpenClaw organizational structure and sub-agents
         </p>
-        
+
         <div className="space-y-4">
           {agents.length === 0 ? (
             <p className="text-gray-500">No agents found</p>
           ) : (
             agents.map((agent, idx) => (
-              <div key={idx} className="flex items-center justify-between p-4 bg-gray-700 rounded-lg">
+              <div
+                key={idx}
+                className="flex items-center justify-between p-4 bg-gray-700 rounded-lg"
+              >
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xl">
                     🤖
@@ -51,9 +54,13 @@ export default function Team() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className={`text-xs px-2 py-1 rounded ${
-                    agent.status === "active" ? "bg-green-900 text-green-300" : "bg-gray-600"
-                  }`}>
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${
+                      agent.status === "active"
+                        ? "bg-green-900 text-green-300"
+                        : "bg-gray-600"
+                    }`}
+                  >
                     {agent.status}
                   </span>
                   <p className="text-xs text-gray-500 mt-1">{agent.model}</p>

@@ -61,8 +61,8 @@ export default function TaskBoard() {
                       task.priority === "high"
                         ? "bg-red-900 text-red-300"
                         : task.priority === "medium"
-                        ? "bg-yellow-900 text-yellow-300"
-                        : "bg-gray-600 text-gray-300"
+                          ? "bg-yellow-900 text-yellow-300"
+                          : "bg-gray-600 text-gray-300"
                     }`}
                   >
                     {task.priority}

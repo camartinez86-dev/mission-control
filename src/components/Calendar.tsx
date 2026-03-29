@@ -25,11 +25,27 @@ export default function Calendar() {
   }, []);
 
   const today = new Date();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const daysInMonth = new Date(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    0,
+  ).getDate();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).getDay();
 
-  const monthNames = ["January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"];
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
 
   const getEventsForDay = (day: number) => {
     const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -45,23 +61,26 @@ export default function Calendar() {
       <h2 className="text-xl font-bold mb-4">
         📅 {monthNames[today.getMonth()]} {today.getFullYear()}
       </h2>
-      
+
       <div className="grid grid-cols-7 gap-1 mb-4">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-          <div key={d} className="text-center text-sm text-gray-400 font-medium py-2">
+          <div
+            key={d}
+            className="text-center text-sm text-gray-400 font-medium py-2"
+          >
             {d}
           </div>
         ))}
-        
+
         {Array.from({ length: firstDay }, (_, i) => (
           <div key={`empty-${i}`} className="h-20" />
         ))}
-        
+
         {Array.from({ length: daysInMonth }, (_, i) => {
           const day = i + 1;
           const dayEvents = getEventsForDay(day);
           const isToday = day === today.getDate();
-          
+
           return (
             <div
               key={day}
@@ -69,7 +88,9 @@ export default function Calendar() {
                 isToday ? "bg-blue-900/30 border-blue-500" : "bg-gray-700"
               }`}
             >
-              <span className={`text-sm ${isToday ? "text-blue-400 font-bold" : "text-gray-300"}`}>
+              <span
+                className={`text-sm ${isToday ? "text-blue-400 font-bold" : "text-gray-300"}`}
+              >
                 {day}
               </span>
               <div className="mt-1">
@@ -79,7 +100,9 @@ export default function Calendar() {
                   </div>
                 ))}
                 {dayEvents.length > 2 && (
-                  <div className="text-xs text-gray-400">+{dayEvents.length - 2} more</div>
+                  <div className="text-xs text-gray-400">
+                    +{dayEvents.length - 2} more
+                  </div>
                 )}
               </div>
             </div>
