@@ -286,7 +286,7 @@ export default function CostView() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                <Tooltip formatter={(value) => formatCurrency(value as number)} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -337,7 +337,7 @@ export default function CostView() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                <Tooltip formatter={(value) => formatCurrency(value as number)} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -373,7 +373,7 @@ export default function CostView() {
             <BarChart data={dayChartData}>
               <XAxis dataKey="name" tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
               <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value) => formatCurrency(value as number)} />
               <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
