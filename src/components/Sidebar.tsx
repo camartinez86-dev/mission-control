@@ -9,7 +9,8 @@ type TabId =
   | "memory"
   | "social"
   | "logs"
-  | "cost";
+  | "cost"
+  | "arb";
 
 const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: "calendar", label: "Calendar", icon: "📅" },
@@ -21,6 +22,7 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: "social", label: "Social", icon: "📱" },
   { id: "logs", label: "Logs", icon: "📊" },
   { id: "cost", label: "Cost", icon: "💰" },
+  { id: "arb", label: "Arb Watcher", icon: "📈" },
 ];
 
 const statusItems = [

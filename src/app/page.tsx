@@ -11,6 +11,7 @@ import SocialView from "@/components/SocialView";
 import MemoryView from "@/components/MemoryView";
 import LogsView from "@/components/LogsView";
 import CostView from "@/components/CostView";
+import ArbView from "@/components/ArbView";
 
 type TabId =
   | "calendar"
@@ -21,7 +22,8 @@ type TabId =
   | "memory"
   | "social"
   | "logs"
-  | "cost";
+  | "cost"
+  | "arb";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("calendar");
@@ -44,6 +46,7 @@ export default function Home() {
           {activeTab === "social" && <SocialView />}
           {activeTab === "logs" && <LogsView />}
           {activeTab === "cost" && <CostView />}
+          {activeTab === "arb" && <ArbView />}
         </div>
       </main>
 
