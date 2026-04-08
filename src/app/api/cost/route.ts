@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
-const COST_TRACKING_PATH = "/data/.openclaw/workspace/cost-tracking.json";
-const SESSIONS_PATH = "/data/.openclaw/agents/main/sessions/sessions.json";
+// Use environment variable or fallback to common paths
+const WORKSPACE_PATH = process.env.OPENCLAW_WORKSPACE || 
+  (process.env.NODE_ENV === 'production' ? "/root/.openclaw/workspace" : "/data/.openclaw/workspace");
+const COST_TRACKING_PATH = `${WORKSPACE_PATH}/cost-tracking.json`;
+const SESSIONS_PATH = `${WORKSPACE_PATH}/agents/main/sessions/sessions.json`;
 
 interface ModelCost {
   inputCostPerM: number;
