@@ -1,52 +1,67 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
-interface CostEntry {
-  date: string;
+interface CostCall {
+  timestamp: string;
   model: string;
-  provider: string;
+  taskType: string;
   inputTokens: number;
   outputTokens: number;
-  cacheReads: number;
-  cacheWrites: number;
-  cost: number;
-}
-
-interface DailyTotal {
-  cost: number;
-  input: number;
-  output: number;
-  cacheReads: number;
-  cacheWrites: number;
-}
-
-interface ModelBreakdown {
-  cost: number;
-  input: number;
-  output: number;
+  estimatedCost: number;
   provider: string;
 }
 
-interface BudgetStatus {
-  minimax: {
-    limit: number;
-    used: number;
-    remaining: number;
-    percentUsed: number;
-  };
+interface ModelData {
+  cost: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  provider: string;
+}
+
+interface TaskData {
+  cost: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+interface ProviderData {
+  cost: number;
+  calls: number;
+}
+
+interface DayData {
+  cost: number;
+  calls: number;
 }
 
 interface CostData {
-  dailyTotals: Record<string, DailyTotal>;
-  byModel: Record<string, ModelBreakdown>;
+  period: string;
+  startDate: string;
+  endDate: string;
+  filters: { model?: string; taskType?: string; provider?: string };
+  totalCalls: number;
   totalCost: number;
-  totalInput: number;
-  totalOutput: number;
-  lastUpdated: string | null;
-  budgetStatus: BudgetStatus;
-  recentEntries: CostEntry[];
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReads: number;
+  totalCacheWrites: number;
+  avgCostPerCall: number;
+  byModel: Record<string, ModelData>;
+  byTaskType: Record<string, TaskData>;
+  byProvider: Record<string, ProviderData>;
+  byDay: Record<string, DayData>;
+  topCalls: CostCall[];
+  budgetStatus: {
+    minimax: { limit: number; used: number; remaining: number; percentUsed: number };
+  };
+  generatedAt: string;
 }
+
+const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6'];
 
 function formatNumber(num: number): string {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
@@ -59,36 +74,27 @@ function formatCurrency(amount: number): string {
   return "$" + amount.toFixed(4);
 }
 
-function calculatePercentage(value: number, total: number): number {
-  return total > 0 ? (value / total) * 100 : 0;
-}
-
-const modelColors: Record<string, string> = {
-  "MiniMax-M2.7": "bg-purple-500",
-  "nexos:gpt-5-4": "bg-blue-500",
-  "default": "bg-gray-500",
-};
-
-const modelLabels: Record<string, string> = {
-  "MiniMax-M2.7": "MiniMax M2.7",
-  "nexos:gpt-5-4": "Nexos GPT 5 4",
-  "default": "Other",
-};
-
 export default function CostView() {
   const [costData, setCostData] = useState<CostData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<"day" | "week" | "month">("day");
+  const [period, setPeriod] = useState<"day" | "week" | "month">("day");
+  const [modelFilter, setModelFilter] = useState<string>("");
+  const [taskFilter, setTaskFilter] = useState<string>("");
+  const [showPieByModel, setShowPieByModel] = useState(true);
 
   useEffect(() => {
     fetchCostData();
-  }, [timeRange]);
+  }, [period, modelFilter, taskFilter]);
 
   const fetchCostData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/cost");
+      let url = `/api/cost?period=${period}`;
+      if (modelFilter) url += `&model=${encodeURIComponent(modelFilter)}`;
+      if (taskFilter) url += `&task_type=${encodeURIComponent(taskFilter)}`;
+      
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch cost data");
       const data = await res.json();
       setCostData(data);
@@ -100,7 +106,7 @@ export default function CostView() {
     }
   };
 
-  if (loading) {
+  if (loading && !costData) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-[var(--text-secondary)]">Loading cost data...</div>
@@ -116,44 +122,90 @@ export default function CostView() {
     );
   }
 
-  const totalCost = costData.totalCost;
-  const totalInput = costData.totalInput;
-  const totalOutput = costData.totalOutput;
-  const totalCacheReads = Object.values(costData.dailyTotals).reduce((sum, d) => sum + d.cacheReads, 0);
-  const totalCacheWrites = Object.values(costData.dailyTotals).reduce((sum, d) => sum + d.cacheWrites, 0);
   const budget = costData.budgetStatus.minimax;
-  const budgetPercent = budget.percentUsed;
+  const budgetPercent = budget.percentUsed || 0;
   const isBudgetWarning = budgetPercent > 75;
   const isBudgetCritical = budgetPercent > 90;
 
-  // Get dates for the selected range
-  const today = new Date();
-  const dateKeys = Object.keys(costData.dailyTotals).sort().reverse();
-  const filteredDates = dateKeys.slice(0, timeRange === "day" ? 1 : timeRange === "week" ? 7 : 30);
-  const rangeTotalCost = filteredDates.reduce((sum, date) => sum + (costData.dailyTotals[date]?.cost || 0), 0);
+  // Prepare chart data
+  const modelChartData = Object.entries(costData.byModel).map(([name, data]) => ({
+    name: name.length > 20 ? name.substring(0, 20) + "..." : name,
+    fullName: name,
+    value: data.cost,
+    calls: data.calls,
+    provider: data.provider
+  })).sort((a, b) => b.value - a.value);
+
+  const taskChartData = Object.entries(costData.byTaskType).map(([name, data]) => ({
+    name: name.replace("_", " "),
+    value: data.cost,
+    calls: data.calls
+  })).sort((a, b) => b.value - a.value);
+
+  const providerChartData = Object.entries(costData.byProvider).map(([name, data]) => ({
+    name,
+    value: data.cost,
+    calls: data.calls
+  })).sort((a, b) => b.value - a.value);
+
+  const dayChartData = Object.entries(costData.byDay)
+    .map(([date, data]) => ({
+      name: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      value: data.cost,
+      calls: data.calls
+    }))
+    .reverse();
+
+  const totalCost = costData.totalCost;
+  const totalInput = costData.totalInputTokens;
+  const totalOutput = costData.totalOutputTokens;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
-            Cost Tracking
-          </h2>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">Cost Tracking</h2>
           <p className="text-sm text-[var(--text-secondary)]">
-            {costData.lastUpdated ? `Last updated: ${new Date(costData.lastUpdated).toLocaleString()}` : "Real-time usage data"}
+            {costData.startDate} to {costData.endDate}
           </p>
         </div>
-        <div className="segment-control">
-          {(["day", "week", "month"] as const).map((range) => (
-            <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`segment-btn capitalize ${timeRange === range ? "active" : ""}`}
-            >
-              {range}
-            </button>
-          ))}
+        
+        {/* Filters */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value as "day" | "week" | "month")}
+            className="bg-white/5 border border-white/10 rounded px-3 py-2 text-sm text-[var(--text-primary)]"
+          >
+            <option value="day">Today</option>
+            <option value="week">Last 7 Days</option>
+            <option value="month">Last 30 Days</option>
+          </select>
+          
+          <input
+            type="text"
+            placeholder="Filter by model..."
+            value={modelFilter}
+            onChange={(e) => setModelFilter(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded px-3 py-2 text-sm text-[var(--text-primary)] w-40"
+          />
+          
+          <select
+            value={taskFilter}
+            onChange={(e) => setTaskFilter(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded px-3 py-2 text-sm text-[var(--text-primary)]"
+          >
+            <option value="">All Tasks</option>
+            <option value="chat">Chat</option>
+            <option value="compaction">Compaction</option>
+            <option value="content_gen">Content Gen</option>
+            <option value="morning_report">Morning Report</option>
+            <option value="arb_analysis">Arb Analysis</option>
+            <option value="heartbeat">Heartbeat</option>
+            <option value="skill">Skill</option>
+            <option value="cron">Cron</option>
+          </select>
         </div>
       </div>
 
@@ -167,7 +219,7 @@ export default function CostView() {
                 {isBudgetCritical ? "MiniMax Budget Critical!" : "MiniMax Budget Warning"}
               </div>
               <div className="text-sm text-[var(--text-secondary)]">
-                Used {budget.used.toFixed(2)} of ${budget.limit} ({budgetPercent.toFixed(1)}%) — {budget.remaining.toFixed(2)} remaining
+                Used {formatCurrency(budget.used)} of {formatCurrency(budget.limit)} ({budgetPercent.toFixed(1)}%) — {formatCurrency(budget.remaining)} remaining
               </div>
             </div>
           </div>
@@ -181,209 +233,221 @@ export default function CostView() {
       )}
 
       {/* Metrics */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="metric-card">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-3xl font-bold text-[var(--text-primary)]">
-              {formatCurrency(rangeTotalCost)}
-            </span>
-            <span className={`text-xs px-2 py-1 rounded-full ${rangeTotalCost > 1 ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>
-              {timeRange}
-            </span>
+          <div className="text-3xl font-bold text-[var(--text-primary)]">
+            {formatCurrency(totalCost)}
           </div>
-          <div className="metric-label">Total Cost ({timeRange})</div>
-          <div className="progress-bar mt-3">
-            <div
-              className="progress-fill bg-purple-500"
-              style={{ width: `${Math.min(100, rangeTotalCost * 10)}%` }}
-            />
-          </div>
+          <div className="metric-label">Total Cost</div>
         </div>
-
         <div className="metric-card">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-3xl font-bold text-[var(--text-primary)]">
-              {formatNumber(totalInput)}
-            </span>
+          <div className="text-3xl font-bold text-[var(--text-primary)]">
+            {costData.totalCalls.toLocaleString()}
+          </div>
+          <div className="metric-label">API Calls</div>
+        </div>
+        <div className="metric-card">
+          <div className="text-3xl font-bold text-purple-500">
+            {formatNumber(totalInput)}
           </div>
           <div className="metric-label">Input Tokens</div>
-          <div className="progress-bar mt-3">
-            <div
-              className="progress-fill bg-purple-500"
-              style={{ width: "45%" }}
-            />
-          </div>
         </div>
-
         <div className="metric-card">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-3xl font-bold text-[var(--text-primary)]">
-              {formatNumber(totalOutput)}
-            </span>
+          <div className="text-3xl font-bold text-blue-500">
+            {formatNumber(totalOutput)}
           </div>
           <div className="metric-label">Output Tokens</div>
-          <div className="progress-bar mt-3">
-            <div
-              className="progress-fill bg-blue-500"
-              style={{ width: "35%" }}
-            />
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-3xl font-bold text-green-500">
-              {totalCacheReads > 0 ? ((totalCacheReads / (totalInput + totalOutput)) * 100).toFixed(0) + "%" : "N/A"}
-            </span>
-          </div>
-          <div className="metric-label">Cache Hit Rate</div>
-          <div className="progress-bar mt-3">
-            <div
-              className="progress-fill bg-green-500"
-              style={{ width: `${(totalCacheReads / (totalInput + totalOutput)) * 100 || 0}%` }}
-            />
-          </div>
         </div>
       </div>
 
-      {/* Per-Model Cost Breakdown */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-          Per-Model Cost Breakdown
-        </h3>
-        
-        {Object.keys(costData.byModel).length === 0 ? (
-          <div className="text-center py-8 text-[var(--text-muted)]">
-            No usage data yet. Costs will appear as you use the bot.
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Cost by Model Pie Chart */}
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+              Cost by Model
+            </h3>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {Object.entries(costData.byModel).map(([model, data]) => {
-              const color = modelColors[model] || modelColors.default;
-              const label = modelLabels[model] || model;
-              const inputPct = calculatePercentage(data.input, totalInput + totalOutput);
-              const outputPct = calculatePercentage(data.output, totalInput + totalOutput);
-
-              return (
-                <div key={model} className="flex items-center gap-4">
-                  {/* Model info */}
-                  <div className="w-48 flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-full ${color} flex items-center justify-center text-xs`}
-                    >
-                      🤖
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-[var(--text-primary)]">
-                        {label}
-                      </div>
-                      <div className="text-xs text-[var(--text-muted)]">
-                        {data.provider}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stacked bar */}
-                  <div className="flex-1">
-                    <div className="h-6 rounded-full bg-white/5 overflow-hidden flex">
-                      <div
-                        className="h-full bg-purple-500 transition-all"
-                        style={{ width: `${inputPct}%` }}
-                        title={`Input: ${formatNumber(data.input)}`}
-                      />
-                      <div
-                        className="h-full bg-blue-500 transition-all"
-                        style={{ width: `${outputPct}%` }}
-                        title={`Output: ${formatNumber(data.output)}`}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Cost */}
-                  <div className="w-24 text-right">
-                    <div className="text-sm font-semibold text-green-500">
-                      {formatCurrency(data.cost)}
-                    </div>
-                    <div className="text-xs text-[var(--text-muted)]">
-                      {totalCost > 0 ? ((data.cost / totalCost) * 100).toFixed(0) + "%" : "0%"}
-                    </div>
-                  </div>
+          {modelChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <PieChart>
+                <Pie
+                  data={modelChartData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                  labelLine={false}
+                >
+                  {modelChartData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-[var(--text-muted)]">
+              No data available
+            </div>
+          )}
+          
+          {/* Model breakdown table */}
+          <div className="mt-4 space-y-2">
+            {modelChartData.slice(0, 5).map((item, index) => (
+              <div key={item.fullName} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                  <span className="text-[var(--text-primary)] truncate max-w-[180px]" title={item.fullName}>
+                    {item.fullName}
+                  </span>
                 </div>
-              );
-            })}
+                <div className="text-[var(--text-secondary)]">
+                  {formatCurrency(item.value)} ({item.calls} calls)
+                </div>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
 
-        {/* Legend */}
-        <div className="flex items-center gap-6 mt-4 pt-4 border-t border-white/5">
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-purple-500" />
-            <span className="text-xs text-[var(--text-muted)]">Input Tokens</span>
+        {/* Cost by Task Type Pie Chart */}
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+              Cost by Task Type
+            </h3>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-blue-500" />
-            <span className="text-xs text-[var(--text-muted)]">Output Tokens</span>
+          {taskChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <PieChart>
+                <Pie
+                  data={taskChartData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                  labelLine={false}
+                >
+                  {taskChartData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-[var(--text-muted)]">
+              No data available
+            </div>
+          )}
+          
+          {/* Task breakdown table */}
+          <div className="mt-4 space-y-2">
+            {taskChartData.slice(0, 5).map((item, index) => (
+              <div key={item.name} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                  <span className="text-[var(--text-primary)] capitalize">{item.name}</span>
+                </div>
+                <div className="text-[var(--text-secondary)]">
+                  {formatCurrency(item.value)} ({item.calls} calls)
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Daily Breakdown */}
-      {dateKeys.length > 0 && (
+      {/* Daily Cost Bar Chart */}
+      {dayChartData.length > 1 && (
         <div className="card p-5">
           <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-            Daily Usage
+            Daily Cost Trend
           </h3>
-          <div className="space-y-2">
-            {dateKeys.slice(0, 7).map((date) => {
-              const day = costData.dailyTotals[date];
-              return (
-                <div key={date} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                  <span className="text-sm text-[var(--text-primary)]">
-                    {new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                  </span>
-                  <div className="flex items-center gap-6 text-xs text-[var(--text-muted)]">
-                    <span>{formatNumber(day.input)} in</span>
-                    <span>{formatNumber(day.output)} out</span>
-                    <span className="text-green-500 font-medium">{formatCurrency(day.cost)}</span>
-                  </div>
-                </div>
-              );
-            })}
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={dayChartData}>
+              <XAxis dataKey="name" tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
+              <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Top Expensive Calls */}
+      {costData.topCalls.length > 0 && (
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+            Top 10 Expensive Calls
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[var(--text-muted)] border-b border-white/10">
+                  <th className="text-left py-2 px-3">Time</th>
+                  <th className="text-left py-2 px-3">Model</th>
+                  <th className="text-left py-2 px-3">Task</th>
+                  <th className="text-right py-2 px-3">Input</th>
+                  <th className="text-right py-2 px-3">Output</th>
+                  <th className="text-right py-2 px-3">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {costData.topCalls.map((call, i) => (
+                  <tr key={i} className="border-b border-white/5 hover:bg-white/5">
+                    <td className="py-2 px-3 text-[var(--text-muted)]">
+                      {new Date(call.timestamp).toLocaleTimeString()}
+                    </td>
+                    <td className="py-2 px-3 text-[var(--text-primary)]">
+                      {call.model.length > 25 ? call.model.substring(0, 25) + "..." : call.model}
+                    </td>
+                    <td className="py-2 px-3 text-[var(--text-secondary)] capitalize">
+                      {call.taskType.replace("_", " ")}
+                    </td>
+                    <td className="py-2 px-3 text-right text-[var(--text-muted)]">
+                      {formatNumber(call.inputTokens)}
+                    </td>
+                    <td className="py-2 px-3 text-right text-[var(--text-muted)]">
+                      {formatNumber(call.outputTokens)}
+                    </td>
+                    <td className="py-2 px-3 text-right text-green-500 font-medium">
+                      {formatCurrency(call.estimatedCost)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* Summary */}
-      <div className="grid grid-cols-5 gap-4">
+      {/* Summary Footer */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="card p-4 text-center">
-          <div className="text-2xl font-bold text-purple-500">
-            {formatNumber(totalInput)}
-          </div>
+          <div className="text-2xl font-bold text-purple-500">{formatCurrency(totalCost)}</div>
+          <div className="text-xs text-[var(--text-muted)]">Total Cost</div>
+        </div>
+        <div className="card p-4 text-center">
+          <div className="text-2xl font-bold text-[var(--text-primary)]">{costData.totalCalls.toLocaleString()}</div>
+          <div className="text-xs text-[var(--text-muted)]">Total Calls</div>
+        </div>
+        <div className="card p-4 text-center">
+          <div className="text-2xl font-bold text-purple-500">{formatNumber(totalInput)}</div>
           <div className="text-xs text-[var(--text-muted)]">Input Tokens</div>
         </div>
         <div className="card p-4 text-center">
-          <div className="text-2xl font-bold text-blue-500">
-            {formatNumber(totalOutput)}
-          </div>
+          <div className="text-2xl font-bold text-blue-500">{formatNumber(totalOutput)}</div>
           <div className="text-xs text-[var(--text-muted)]">Output Tokens</div>
         </div>
         <div className="card p-4 text-center">
-          <div className="text-2xl font-bold text-green-500">
-            {formatNumber(totalCacheReads)}
-          </div>
-          <div className="text-xs text-[var(--text-muted)]">Cache Reads</div>
-        </div>
-        <div className="card p-4 text-center">
-          <div className="text-2xl font-bold text-orange-500">
-            {formatNumber(totalCacheWrites)}
-          </div>
-          <div className="text-xs text-[var(--text-muted)]">Cache Writes</div>
-        </div>
-        <div className="card p-4 text-center">
-          <div className="text-2xl font-bold text-[var(--text-primary)]">
-            {formatCurrency(totalCost)}
-          </div>
-          <div className="text-xs text-[var(--text-muted)]">Total Cost</div>
+          <div className="text-2xl font-bold text-green-500">{formatCurrency(costData.avgCostPerCall)}</div>
+          <div className="text-xs text-[var(--text-muted)]">Avg Cost/Call</div>
         </div>
       </div>
     </div>
