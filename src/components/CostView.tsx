@@ -1,22 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import dynamic from "next/dynamic";
-
-// Dynamically import recharts components to avoid SSR issues
-const PieChartComponent = dynamic(
-  () => import("recharts").then(mod => ({ default: mod.PieChart })),
-  { ssr: false, loading: () => <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">Loading chart...</div> }
-);
-const Pie = dynamic(() => import("recharts").then(mod => mod.Pie), { ssr: false });
-const Cell = dynamic(() => import("recharts").then(mod => mod.Cell), { ssr: false });
-const BarChartComponent = dynamic(() => import("recharts").then(mod => mod.BarChart), { ssr: false });
-const Bar = dynamic(() => import("recharts").then(mod => mod.Bar), { ssr: false });
-const XAxisComponent = dynamic(() => import("recharts").then(mod => mod.XAxis), { ssr: false });
-const YAxisComponent = dynamic(() => import("recharts").then(mod => mod.YAxis), { ssr: false });
-const TooltipComponent = dynamic(() => import("recharts").then(mod => mod.Tooltip), { ssr: false });
-const LegendComponent = dynamic(() => import("recharts").then(mod => mod.Legend), { ssr: false });
-const ResponsiveContainerComponent = dynamic(() => import("recharts").then(mod => mod.ResponsiveContainer), { ssr: false });
 
 interface CostCall {
   timestamp: string;
@@ -60,17 +44,39 @@ function formatCurrency(amount: number): string {
   return "$" + amount.toFixed(4);
 }
 
-const CustomTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-[var(--bg-card)] border border-white/10 rounded px-3 py-2 text-sm">
-        <p className="text-[var(--text-primary)]">{payload[0].name}</p>
-        <p className="text-green-500">{formatCurrency(payload[0].value)}</p>
+// Simple HTML/CSS horizontal bar chart component
+function HorizontalBar({ label, value, maxValue, color }: { label: string; value: number; maxValue: number; color: string }) {
+  const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0;
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <div className="w-32 text-sm text-[var(--text-secondary)] truncate">{label}</div>
+      <div className="flex-1 h-6 bg-white/5 rounded-full overflow-hidden">
+        <div 
+          className="h-full rounded-full transition-all" 
+          style={{ width: `${percentage}%`, backgroundColor: color }}
+        />
       </div>
-    );
-  }
-  return null;
-};
+      <div className="w-20 text-right text-sm text-[var(--text-primary)]">{formatCurrency(value)}</div>
+    </div>
+  );
+}
+
+// Simple vertical bar for daily trend
+function DailyBar({ day, value, maxValue }: { day: string; value: number; maxValue: number }) {
+  const height = maxValue > 0 ? (value / maxValue) * 100 : 0;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="w-full flex-1 flex items-end justify-center">
+        <div 
+          className="w-8 bg-purple-500 rounded-t"
+          style={{ height: `${Math.max(height, 2)}%` }}
+          title={formatCurrency(value)}
+        />
+      </div>
+      <div className="text-xs text-[var(--text-muted)]">{day}</div>
+    </div>
+  );
+}
 
 export default function CostView() {
   const [costData, setCostData] = useState<CostData | null>(null);
@@ -118,32 +124,30 @@ export default function CostView() {
   const isBudgetWarning = budgetPercent > 75;
   const isBudgetCritical = budgetPercent > 90;
 
-  // Prepare chart data
-  const modelChartData = Object.entries(costData.byModel)
-    .map(([name, data]) => ({
-      name: name.length > 20 ? name.substring(0, 20) + "..." : name,
-      fullName: name,
-      value: data.cost,
-      calls: data.calls,
-      provider: data.provider
-    }))
-    .sort((a, b) => b.value - a.value);
+  // Prepare data
+  const modelData = Object.entries(costData.byModel)
+    .map(([name, data]) => ({ name, ...data }))
+    .sort((a, b) => b.cost - a.cost);
 
-  const taskChartData = Object.entries(costData.byTaskType)
-    .map(([name, data]) => ({
-      name: name.replace(/_/g, " "),
-      value: data.cost,
-      calls: data.calls
-    }))
-    .sort((a, b) => b.value - a.value);
+  const taskData = Object.entries(costData.byTaskType)
+    .map(([name, data]) => ({ name, ...data }))
+    .sort((a, b) => b.cost - a.cost);
 
-  const dayChartData = Object.entries(costData.byDay)
-    .map(([date, data]) => ({
-      name: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      value: data.cost,
-      calls: data.calls
+  const providerData = Object.entries(costData.byProvider)
+    .map(([name, data]) => ({ name, ...data }))
+    .sort((a, b) => b.cost - a.cost);
+
+  const dayData = Object.entries(costData.byDay)
+    .map(([date, data]) => ({ 
+      day: new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }).split(',')[0],
+      date,
+      ...data 
     }))
     .reverse();
+
+  const maxModelCost = modelData.length > 0 ? Math.max(...modelData.map(d => d.cost)) : 0;
+  const maxTaskCost = taskData.length > 0 ? Math.max(...taskData.map(d => d.cost)) : 0;
+  const maxDayCost = dayData.length > 0 ? Math.max(...dayData.map(d => d.cost)) : 0;
 
   const totalCost = costData.totalCost;
   const totalInput = costData.totalInputTokens;
@@ -213,125 +217,89 @@ export default function CostView() {
         </div>
       </div>
 
-      {/* Charts Row */}
+      {/* Charts - HTML/CSS based */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Cost by Model Pie Chart */}
+        {/* Cost by Model - Horizontal Bars */}
         <div className="card p-5">
           <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
             Cost by Model
           </h3>
-          {modelChartData.length > 0 ? (
-            <>
-              <ResponsiveContainerComponent width="100%" height={220}>
-                <PieChartComponent>
-                  <Pie
-                    data={modelChartData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={70}
-                    label={false}
-                  >
-                    {modelChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <TooltipComponent content={<CustomTooltip />} />
-                  <LegendComponent 
-                    formatter={(value) => <span className="text-xs text-[var(--text-secondary)]">{value}</span>}
-                  />
-                </PieChartComponent>
-              </ResponsiveContainerComponent>
-              <div className="mt-4 space-y-2">
-                {modelChartData.slice(0, 4).map((item, index) => (
-                  <div key={item.fullName} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                      <span className="text-[var(--text-primary)] truncate max-w-[160px]" title={item.fullName}>
-                        {item.fullName}
-                      </span>
-                    </div>
-                    <span className="text-green-500 font-medium">{formatCurrency(item.value)}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+          {modelData.length === 0 ? (
+            <div className="text-center py-8 text-[var(--text-muted)]">No data</div>
           ) : (
-            <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">No data</div>
+            <div className="space-y-1">
+              {modelData.map((item, i) => (
+                <HorizontalBar 
+                  key={item.name}
+                  label={item.name.split(':').pop() || item.name}
+                  value={item.cost}
+                  maxValue={maxModelCost}
+                  color={COLORS[i % COLORS.length]}
+                />
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Cost by Task Type Pie Chart */}
+        {/* Cost by Task Type - Horizontal Bars */}
         <div className="card p-5">
           <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
             Cost by Task Type
           </h3>
-          {taskChartData.length > 0 ? (
-            <>
-              <ResponsiveContainerComponent width="100%" height={220}>
-                <PieChartComponent>
-                  <Pie
-                    data={taskChartData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={70}
-                    label={false}
-                  >
-                    {taskChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <TooltipComponent content={<CustomTooltip />} />
-                  <LegendComponent 
-                    formatter={(value) => <span className="text-xs text-[var(--text-secondary)]">{value}</span>}
-                  />
-                </PieChartComponent>
-              </ResponsiveContainerComponent>
-              <div className="mt-4 space-y-2">
-                {taskChartData.slice(0, 4).map((item, index) => (
-                  <div key={item.name} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                      <span className="text-[var(--text-primary)] capitalize">{item.name}</span>
-                    </div>
-                    <span className="text-green-500 font-medium">{formatCurrency(item.value)}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+          {taskData.length === 0 ? (
+            <div className="text-center py-8 text-[var(--text-muted)]">No data</div>
           ) : (
-            <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">No data</div>
+            <div className="space-y-1">
+              {taskData.map((item, i) => (
+                <HorizontalBar 
+                  key={item.name}
+                  label={item.name.replace(/_/g, ' ')}
+                  value={item.cost}
+                  maxValue={maxTaskCost}
+                  color={COLORS[i % COLORS.length]}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>
 
-      {/* Daily Cost Bar Chart */}
-      {dayChartData.length > 1 && (
+      {/* Daily Trend - Vertical Bars */}
+      {dayData.length > 1 && (
         <div className="card p-5">
           <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
             Daily Cost Trend
           </h3>
-          <ResponsiveContainerComponent width="100%" height={180}>
-            <BarChartComponent data={dayChartData}>
-              <XAxisComponent 
-                dataKey="name" 
-                tick={{ fill: "var(--text-muted)", fontSize: 11 }}
-                axisLine={{ stroke: "var(--border-color)" }}
+          <div className="flex items-end justify-between gap-2 h-32">
+            {dayData.map((item) => (
+              <DailyBar 
+                key={item.date}
+                day={item.day}
+                value={item.cost}
+                maxValue={maxDayCost}
               />
-              <YAxisComponent 
-                tick={{ fill: "var(--text-muted)", fontSize: 11 }}
-                axisLine={{ stroke: "var(--border-color)" }}
-                tickFormatter={(v) => `$${v.toFixed(2)}`}
-              />
-              <TooltipComponent content={<CustomTooltip />} />
-              <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-            </BarChartComponent>
-          </ResponsiveContainerComponent>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* By Provider */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+          Cost by Provider
+        </h3>
+        <div className="grid grid-cols-3 gap-4">
+          {providerData.map((item, i) => (
+            <div key={item.name} className="text-center">
+              <div className="text-2xl font-bold" style={{ color: COLORS[i % COLORS.length] }}>
+                {formatCurrency(item.cost)}
+              </div>
+              <div className="text-sm text-[var(--text-primary)] capitalize">{item.name}</div>
+              <div className="text-xs text-[var(--text-muted)]">{item.calls} calls</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Top Expensive Calls */}
       {costData.topCalls.length > 0 && (
@@ -343,8 +311,8 @@ export default function CostView() {
             {costData.topCalls.slice(0, 5).map((call, i) => (
               <div key={i} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
                 <div>
-                  <div className="text-sm text-[var(--text-primary)]">{call.model.length > 30 ? call.model.substring(0, 30) + "..." : call.model}</div>
-                  <div className="text-xs text-[var(--text-muted)] capitalize">{call.taskType.replace(/_/g, " ")}</div>
+                  <div className="text-sm text-[var(--text-primary)]">{call.model.split(':').pop()}</div>
+                  <div className="text-xs text-[var(--text-muted)] capitalize">{call.taskType.replace(/_/g, ' ')}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-sm font-semibold text-green-500">{formatCurrency(call.estimatedCost)}</div>
