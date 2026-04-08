@@ -1,7 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import dynamic from "next/dynamic";
+
+// Dynamically import recharts components to avoid SSR issues
+const PieChartComponent = dynamic(
+  () => import("recharts").then(mod => ({ default: mod.PieChart })),
+  { ssr: false, loading: () => <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">Loading chart...</div> }
+);
+const Pie = dynamic(() => import("recharts").then(mod => mod.Pie), { ssr: false });
+const Cell = dynamic(() => import("recharts").then(mod => mod.Cell), { ssr: false });
+const BarChartComponent = dynamic(() => import("recharts").then(mod => mod.BarChart), { ssr: false });
+const Bar = dynamic(() => import("recharts").then(mod => mod.Bar), { ssr: false });
+const XAxisComponent = dynamic(() => import("recharts").then(mod => mod.XAxis), { ssr: false });
+const YAxisComponent = dynamic(() => import("recharts").then(mod => mod.YAxis), { ssr: false });
+const TooltipComponent = dynamic(() => import("recharts").then(mod => mod.Tooltip), { ssr: false });
+const LegendComponent = dynamic(() => import("recharts").then(mod => mod.Legend), { ssr: false });
+const ResponsiveContainerComponent = dynamic(() => import("recharts").then(mod => mod.ResponsiveContainer), { ssr: false });
 
 interface CostCall {
   timestamp: string;
@@ -207,8 +222,8 @@ export default function CostView() {
           </h3>
           {modelChartData.length > 0 ? (
             <>
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
+              <ResponsiveContainerComponent width="100%" height={220}>
+                <PieChartComponent>
                   <Pie
                     data={modelChartData}
                     dataKey="value"
@@ -222,12 +237,12 @@ export default function CostView() {
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend 
+                  <TooltipComponent content={<CustomTooltip />} />
+                  <LegendComponent 
                     formatter={(value) => <span className="text-xs text-[var(--text-secondary)]">{value}</span>}
                   />
-                </PieChart>
-              </ResponsiveContainer>
+                </PieChartComponent>
+              </ResponsiveContainerComponent>
               <div className="mt-4 space-y-2">
                 {modelChartData.slice(0, 4).map((item, index) => (
                   <div key={item.fullName} className="flex items-center justify-between text-sm">
@@ -254,8 +269,8 @@ export default function CostView() {
           </h3>
           {taskChartData.length > 0 ? (
             <>
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
+              <ResponsiveContainerComponent width="100%" height={220}>
+                <PieChartComponent>
                   <Pie
                     data={taskChartData}
                     dataKey="value"
@@ -269,12 +284,12 @@ export default function CostView() {
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend 
+                  <TooltipComponent content={<CustomTooltip />} />
+                  <LegendComponent 
                     formatter={(value) => <span className="text-xs text-[var(--text-secondary)]">{value}</span>}
                   />
-                </PieChart>
-              </ResponsiveContainer>
+                </PieChartComponent>
+              </ResponsiveContainerComponent>
               <div className="mt-4 space-y-2">
                 {taskChartData.slice(0, 4).map((item, index) => (
                   <div key={item.name} className="flex items-center justify-between text-sm">
@@ -299,22 +314,22 @@ export default function CostView() {
           <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
             Daily Cost Trend
           </h3>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={dayChartData}>
-              <XAxis 
+          <ResponsiveContainerComponent width="100%" height={180}>
+            <BarChartComponent data={dayChartData}>
+              <XAxisComponent 
                 dataKey="name" 
                 tick={{ fill: "var(--text-muted)", fontSize: 11 }}
                 axisLine={{ stroke: "var(--border-color)" }}
               />
-              <YAxis 
+              <YAxisComponent 
                 tick={{ fill: "var(--text-muted)", fontSize: 11 }}
                 axisLine={{ stroke: "var(--border-color)" }}
                 tickFormatter={(v) => `$${v.toFixed(2)}`}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <TooltipComponent content={<CustomTooltip />} />
               <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+            </BarChartComponent>
+          </ResponsiveContainerComponent>
         </div>
       )}
 
