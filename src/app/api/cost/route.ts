@@ -2,217 +2,200 @@ import { NextResponse } from "next/server";
 import { readFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 
-const WORKSPACE_PATH = process.env.OPENCLAW_WORKSPACE || 
-  (process.env.NODE_ENV === 'production' ? "/root/.openclaw/workspace" : "/data/.openclaw/workspace");
-const USAGE_LOGS_DIR = `${WORKSPACE_PATH}/usage-logs`;
-const REPORTS_DIR = `${USAGE_LOGS_DIR}/reports`;
+const SESSIONS_DIR = process.env.OPENCLAW_SESSIONS_DIR ||
+  (process.env.NODE_ENV === 'production'
+    ? "/root/.openclaw/agents/main/sessions"
+    : "/root/.openclaw/agents/main/sessions");
 
-interface Call {
+interface UsageEntry {
   timestamp: string;
   provider: string;
   model: string;
-  taskType: string;
   inputTokens: number;
   outputTokens: number;
-  cacheReads: number;
-  cacheWrites: number;
-  estimatedCost: number;
-  success: boolean;
-  sessionId?: string;
-  error?: string;
-}
-
-interface ModelBreakdown {
+  cacheRead: number;
+  cacheWrite: number;
   cost: number;
-  calls: number;
-  inputTokens: number;
-  outputTokens: number;
-  provider: string;
-}
-
-interface TaskBreakdown {
-  cost: number;
-  calls: number;
-  inputTokens: number;
-  outputTokens: number;
 }
 
 function getDateRange(period: string): { start: Date; end: Date } {
   const end = new Date();
   const start = new Date();
-  
+
   if (period === "day") {
     start.setHours(0, 0, 0, 0);
   } else if (period === "week") {
     start.setDate(start.getDate() - 7);
+    start.setHours(0, 0, 0, 0);
   } else if (period === "month") {
     start.setDate(start.getDate() - 30);
+    start.setHours(0, 0, 0, 0);
   }
-  
+
   return { start, end };
 }
 
-function loadCallsForPeriod(start: Date, end: Date): Call[] {
-  const calls: Call[] = [];
-  const current = new Date(start);
-  
-  while (current <= end) {
-    const dateStr = current.toISOString().split('T')[0];
-    const logFile = join(USAGE_LOGS_DIR, `calls-${dateStr}.jsonl`);
-    
-    if (existsSync(logFile)) {
+function parseSessionsForUsage(start: Date, end: Date): UsageEntry[] {
+  const entries: UsageEntry[] = [];
+
+  if (!existsSync(SESSIONS_DIR)) return entries;
+
+  const files = readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.jsonl'));
+
+  for (const file of files) {
+    const filePath = join(SESSIONS_DIR, file);
+    let content: string;
+    try {
+      content = readFileSync(filePath, 'utf-8');
+    } catch {
+      continue;
+    }
+
+    const lines = content.split('\n').filter(Boolean);
+    for (const line of lines) {
       try {
-        const content = readFileSync(logFile, 'utf-8');
-        const lines = content.split('\n').filter(Boolean);
-        
-        for (const line of lines) {
-          try {
-            const call = JSON.parse(line) as Call;
-            calls.push(call);
-          } catch {
-            // Skip malformed lines
-          }
-        }
+        const record = JSON.parse(line);
+        // Only look at assistant messages with usage data
+        if (record.type !== 'message') continue;
+        if (record.message?.role !== 'assistant') continue;
+
+        const usage = record.message?.usage;
+        if (!usage || typeof usage !== 'object') continue;
+
+        const costObj = usage.cost;
+        const totalCost = typeof costObj?.total === 'number' ? costObj.total : 0;
+
+        const ts = record.timestamp ? new Date(record.timestamp) : null;
+        if (!ts || isNaN(ts.getTime())) continue;
+        if (ts < start || ts > end) continue;
+
+        // Skip zero-cost zero-token entries (errors/empty)
+        const inputTok = usage.input || 0;
+        const outputTok = usage.output || 0;
+        if (inputTok === 0 && outputTok === 0) continue;
+
+        entries.push({
+          timestamp: ts.toISOString(),
+          provider: record.message.provider || 'unknown',
+          model: record.message.model || 'unknown',
+          inputTokens: inputTok,
+          outputTokens: outputTok,
+          cacheRead: usage.cacheRead || 0,
+          cacheWrite: usage.cacheWrite || 0,
+          cost: totalCost,
+        });
       } catch {
-        // Skip unreadable files
+        // skip malformed
       }
     }
-    
-    current.setDate(current.getDate() + 1);
   }
-  
-  return calls;
-}
 
-function filterCalls(calls: Call[], model?: string, taskType?: string, provider?: string): Call[] {
-  return calls.filter(c => {
-    if (model && !c.model.toLowerCase().includes(model.toLowerCase())) return false;
-    if (taskType && c.taskType !== taskType) return false;
-    if (provider && c.provider !== provider) return false;
-    return true;
-  });
+  return entries;
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || 'day';
-    const model = searchParams.get('model') || undefined;
-    const taskType = searchParams.get('task_type') || searchParams.get('taskType') || undefined;
-    const provider = searchParams.get('provider') || undefined;
-    
+    const filterProvider = searchParams.get('provider') || undefined;
+    const filterModel = searchParams.get('model') || undefined;
+
     const { start, end } = getDateRange(period);
-    let calls = loadCallsForPeriod(start, end);
-    
-    // Apply filters
-    if (model || taskType || provider) {
-      calls = filterCalls(calls, model, taskType, provider);
+    let entries = parseSessionsForUsage(start, end);
+
+    if (filterProvider) {
+      entries = entries.filter(e => e.provider.toLowerCase().includes(filterProvider.toLowerCase()));
     }
-    
-    // Aggregate totals
-    const totalCalls = calls.length;
-    const totalCost = calls.reduce((sum, c) => sum + c.estimatedCost, 0);
-    const totalInput = calls.reduce((sum, c) => sum + c.inputTokens, 0);
-    const totalOutput = calls.reduce((sum, c) => sum + c.outputTokens, 0);
-    const totalCacheReads = calls.reduce((sum, c) => sum + c.cacheReads, 0);
-    const totalCacheWrites = calls.reduce((sum, c) => sum + c.cacheWrites, 0);
-    
+    if (filterModel) {
+      entries = entries.filter(e => e.model.toLowerCase().includes(filterModel.toLowerCase()));
+    }
+
+    const totalCalls = entries.length;
+    const totalCost = entries.reduce((s, e) => s + e.cost, 0);
+    const totalInput = entries.reduce((s, e) => s + e.inputTokens, 0);
+    const totalOutput = entries.reduce((s, e) => s + e.outputTokens, 0);
+    const totalCacheRead = entries.reduce((s, e) => s + e.cacheRead, 0);
+    const totalCacheWrite = entries.reduce((s, e) => s + e.cacheWrite, 0);
+
     // By Model
-    const byModel: Record<string, ModelBreakdown> = {};
-    for (const call of calls) {
-      if (!byModel[call.model]) {
-        byModel[call.model] = { cost: 0, calls: 0, inputTokens: 0, outputTokens: 0, provider: call.provider };
+    const byModel: Record<string, { cost: number; calls: number; inputTokens: number; outputTokens: number; provider: string }> = {};
+    for (const e of entries) {
+      if (!byModel[e.model]) {
+        byModel[e.model] = { cost: 0, calls: 0, inputTokens: 0, outputTokens: 0, provider: e.provider };
       }
-      byModel[call.model].cost += call.estimatedCost;
-      byModel[call.model].calls += 1;
-      byModel[call.model].inputTokens += call.inputTokens;
-      byModel[call.model].outputTokens += call.outputTokens;
+      byModel[e.model].cost += e.cost;
+      byModel[e.model].calls += 1;
+      byModel[e.model].inputTokens += e.inputTokens;
+      byModel[e.model].outputTokens += e.outputTokens;
     }
-    
-    // By Task Type
-    const byTaskType: Record<string, TaskBreakdown> = {};
-    for (const call of calls) {
-      if (!byTaskType[call.taskType]) {
-        byTaskType[call.taskType] = { cost: 0, calls: 0, inputTokens: 0, outputTokens: 0 };
-      }
-      byTaskType[call.taskType].cost += call.estimatedCost;
-      byTaskType[call.taskType].calls += 1;
-      byTaskType[call.taskType].inputTokens += call.inputTokens;
-      byTaskType[call.taskType].outputTokens += call.outputTokens;
-    }
-    
+
     // By Provider
     const byProvider: Record<string, { cost: number; calls: number }> = {};
-    for (const call of calls) {
-      if (!byProvider[call.provider]) {
-        byProvider[call.provider] = { cost: 0, calls: 0 };
+    for (const e of entries) {
+      if (!byProvider[e.provider]) {
+        byProvider[e.provider] = { cost: 0, calls: 0 };
       }
-      byProvider[call.provider].cost += call.estimatedCost;
-      byProvider[call.provider].calls += 1;
+      byProvider[e.provider].cost += e.cost;
+      byProvider[e.provider].calls += 1;
     }
-    
+
     // By Day
     const byDay: Record<string, { cost: number; calls: number }> = {};
-    for (const call of calls) {
-      const day = call.timestamp?.split('T')[0] || 'unknown';
-      if (!byDay[day]) {
-        byDay[day] = { cost: 0, calls: 0 };
-      }
-      byDay[day].cost += call.estimatedCost;
+    for (const e of entries) {
+      const day = e.timestamp.split('T')[0];
+      if (!byDay[day]) byDay[day] = { cost: 0, calls: 0 };
+      byDay[day].cost += e.cost;
       byDay[day].calls += 1;
     }
-    
-    // Top calls
-    const topCalls = [...calls]
-      .sort((a, b) => b.estimatedCost - a.estimatedCost)
+
+    // Top calls by cost
+    const topCalls = [...entries]
+      .sort((a, b) => b.cost - a.cost)
       .slice(0, 10)
-      .map(c => ({
-        timestamp: c.timestamp,
-        model: c.model,
-        taskType: c.taskType,
-        cost: c.estimatedCost,
-        inputTokens: c.inputTokens,
-        outputTokens: c.outputTokens,
-        provider: c.provider
+      .map(e => ({
+        timestamp: e.timestamp,
+        model: e.model,
+        provider: e.provider,
+        cost: e.cost,
+        inputTokens: e.inputTokens,
+        outputTokens: e.outputTokens,
       }));
-    
-    // MiniMax budget tracking
-    const miniMaxCost = Object.entries(byModel)
-      .filter(([model]) => model.includes('MiniMax'))
-      .reduce((sum, [, data]) => sum + data.cost, 0);
-    
+
     const result = {
       period,
       startDate: start.toISOString().split('T')[0],
       endDate: end.toISOString().split('T')[0],
-      filters: { model, taskType, provider },
+      source: 'openclaw-sessions',
+      filters: { provider: filterProvider, model: filterModel },
       totalCalls,
       totalCost,
       totalInputTokens: totalInput,
       totalOutputTokens: totalOutput,
-      totalCacheReads: totalCacheReads,
-      totalCacheWrites: totalCacheWrites,
+      totalCacheReads: totalCacheRead,
+      totalCacheWrites: totalCacheWrite,
       avgCostPerCall: totalCalls > 0 ? totalCost / totalCalls : 0,
-      byModel: Object.fromEntries(
-        Object.entries(byModel).map(([k, v]) => [k, { ...v, cost: Math.round(v.cost * 1000000) / 1000000 }])
-      ),
-      byTaskType: Object.fromEntries(
-        Object.entries(byTaskType).map(([k, v]) => [k, { ...v, cost: Math.round(v.cost * 1000000) / 1000000 }])
-      ),
+      byModel,
       byProvider,
       byDay,
       topCalls,
       budgetStatus: {
         minimax: {
           limit: 20,
-          used: Math.round(miniMaxCost * 1000000) / 1000000,
-          remaining: Math.max(0, 20 - miniMaxCost),
-          percentUsed: (miniMaxCost / 20) * 100
+          used: Object.entries(byProvider)
+            .filter(([p]) => p.includes('minimax'))
+            .reduce((s, [, v]) => s + v.cost, 0),
+          remaining: 20,
+          percentUsed: 0,
         }
       },
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
     };
-    
+
+    // Fix minimax budget remaining/percent
+    const mmUsed = result.budgetStatus.minimax.used;
+    result.budgetStatus.minimax.remaining = Math.max(0, 20 - mmUsed);
+    result.budgetStatus.minimax.percentUsed = (mmUsed / 20) * 100;
+
     return NextResponse.json(result);
   } catch (error) {
     console.error('Cost API error:', error);
