@@ -2,71 +2,67 @@
 
 import { useState, useEffect } from "react";
 
-interface TradeEntry {
-  time: string;
-  market_id: string;
-  opportunity: string;
-  poly_price: number;
-  kalshi_price: number;
-  total_cost: number;
-  edge_percent: number;
-  kalshi_result: any;
-  simulation: boolean;
+interface SimTrade {
+  ticker: string;
+  side: string;
+  size: number;
+  ai_prob: number;
+  market_prob: number;
+  edge: number;
+  timestamp: string;
 }
 
-interface DailyStats {
-  date: string;
-  trades: number;
-  loss: number;
-  profit: number;
-  positions: any[];
+interface ArbViewData {
+  arbWatcher: {
+    status: string;
+    polls: number;
+    lastPoll: string;
+    kalshi_markets: number;
+    poly_markets: number;
+    mode: string;
+  };
+  edgeHunter: {
+    status: string;
+    mode: string;
+    lastRun: string;
+    signalsGenerated: number;
+    healthCheck: string;
+    positions: number;
+    trades: number;
+    profit: number;
+  };
+  simulation: {
+    enabled: boolean;
+    totalSimTrades: number;
+    lastSimTrade: string;
+    recentTrades: SimTrade[];
+    testPeriod: string;
+    daysRemaining: number;
+  };
 }
 
-interface ArbLog {
-  polls: number;
-  lastPoll: string;
-  status: string;
-  mode: string;
-  kalshi_markets: number;
-  poly_markets: number;
-  daily_trades: number;
-  daily_profit: number;
-  daily_loss: number;
-  last_edge: number;
-  recent_trades: TradeEntry[];
-}
-
-const sampleArbLog: ArbLog = {
-  polls: 142,
-  lastPoll: "2026-04-08T06:05:00Z",
-  status: "Running",
-  mode: "Simulation",
-  kalshi_markets: 50,
-  poly_markets: 100,
-  daily_trades: 0,
-  daily_profit: 0,
-  daily_loss: 0,
-  last_edge: 0,
-  recent_trades: [],
+const sampleData: ArbViewData = {
+  arbWatcher: { status: "Running", polls: 142, lastPoll: "", kalshi_markets: 50, poly_markets: 100, mode: "Simulation" },
+  edgeHunter: { status: "Running", mode: "Simulation", lastRun: "", signalsGenerated: 10, healthCheck: "Healthy", positions: 0, trades: 0, profit: 0 },
+  simulation: { enabled: true, totalSimTrades: 0, lastSimTrade: null, recentTrades: [], testPeriod: "Apr 10 - Apr 24, 2026", daysRemaining: 13 },
 };
 
 export default function ArbView() {
-  const [arbLog, setArbLog] = useState<ArbLog>(sampleArbLog);
+  const [data, setData] = useState<ArbViewData>(sampleData);
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState<"hour" | "day" | "week">("day");
 
   useEffect(() => {
-    fetchArbData();
-    const interval = setInterval(fetchArbData, 30000); // Refresh every 30s
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const fetchArbData = async () => {
+  const fetchData = async () => {
     try {
       const res = await fetch("/api/arb");
       if (res.ok) {
-        const data = await res.json();
-        setArbLog({ ...sampleArbLog, ...data });
+        const json = await res.json();
+        setData({ ...sampleData, ...json });
       }
     } catch (error) {
       console.log("Could not fetch arb data:", error);
@@ -75,201 +71,153 @@ export default function ArbView() {
     }
   };
 
-  const metrics = [
-    {
-      label: "Status",
-      value: arbLog.status,
-      color: arbLog.status === "Running" ? "text-green-500" : "text-red-500",
-      icon: arbLog.status === "Running" ? "🟢" : "🔴",
-    },
-    {
-      label: "Mode",
-      value: arbLog.mode,
-      color: "text-blue-500",
-      icon: "🎮",
-    },
-    {
-      label: "Markets Watched",
-      value: `${arbLog.kalshi_markets} / ${arbLog.poly_markets}`,
-      color: "text-purple-500",
-      icon: "📊",
-    },
-    {
-      label: "Edge Threshold",
-      value: "3.0%",
-      color: "text-orange-500",
-      icon: "⚡",
-    },
-  ];
-
-  const pnlMetrics = [
-    { label: "Trades Today", value: arbLog.daily_trades.toString(), change: "0", positive: true },
-    { label: "Profit", value: `$${arbLog.daily_profit.toFixed(2)}`, change: "0", positive: true },
-    { label: "Loss", value: `$${arbLog.daily_loss.toFixed(2)}`, change: "0", positive: false },
-    {
-      label: "Net P&L",
-      value: `$${(arbLog.daily_profit - arbLog.daily_loss).toFixed(2)}`,
-      change: arbLog.daily_profit - arbLog.daily_loss >= 0 ? "+" : "",
-      positive: arbLog.daily_profit - arbLog.daily_loss >= 0,
-    },
-  ];
-
-  const potentialProfit = arbLog.recent_trades.reduce((sum, t) => sum + (1 - t.total_cost), 0);
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
-            📈 Arbitrage Monitor
-          </h2>
-          <p className="text-sm text-[var(--text-secondary)]">
-            Polymarket → Kalshi cross-exchange arbitrage
-          </p>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">📈 Trading Bots</h2>
+          <p className="text-sm text-[var(--text-secondary)]">Edge Hunter + Arb Watcher monitoring</p>
         </div>
-        <div className="segment-control">
-          {(["hour", "day", "week"] as const).map((range) => (
-            <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`segment-btn capitalize ${timeRange === range ? "active" : ""}`}
-            >
-              {range}
-            </button>
-          ))}
+        <div className="text-right">
+          <div className="text-xs text-[var(--text-muted)]">Test Period</div>
+          <div className="text-lg font-bold text-[var(--text-primary)]">{data.simulation.testPeriod}</div>
+          <div className="text-xs text-green-500">{data.simulation.daysRemaining} days remaining</div>
         </div>
       </div>
 
-      {/* Status Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        {metrics.map((metric, i) => (
-          <div key={i} className="metric-card">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-2xl">{metric.icon}</span>
-              <span className={`text-2xl font-bold ${metric.color}`}>
-                {metric.value}
-              </span>
+      {/* Simulation Banner */}
+      <div className="card p-4 border border-yellow-500/30 bg-yellow-500/10">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">🧪</span>
+          <div>
+            <div className="font-bold text-yellow-500">SIMULATION MODE ACTIVE</div>
+            <div className="text-sm text-[var(--text-secondary)]">
+              Running hypothetical trades — no real money spent
             </div>
-            <div className="metric-label">{metric.label}</div>
           </div>
-        ))}
+          <div className="ml-auto text-right">
+            <div className="text-2xl font-bold text-yellow-500">{data.simulation.totalSimTrades}</div>
+            <div className="text-xs text-[var(--text-muted)]">Sim trades</div>
+          </div>
+        </div>
       </div>
 
-      {/* P&L Section */}
-      <div className="grid grid-cols-4 gap-4">
-        {pnlMetrics.map((metric, i) => (
-          <div key={i} className="card p-4">
-            <div className="text-xs text-[var(--text-muted)] mb-1">{metric.label}</div>
-            <div className={`text-2xl font-bold ${metric.positive ? "text-green-500" : "text-red-500"}`}>
-              {metric.value}
+      {/* Bot Status Cards */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Edge Hunter */}
+        <div className="metric-card">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-2xl">🎯</span>
+            <span className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Edge Hunter</span>
+          </div>
+          <div className="text-2xl font-bold text-green-500">{data.edgeHunter.status}</div>
+          <div className="text-xs text-[var(--text-muted)] mt-1">AI probability mispricing</div>
+          <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
+            <div className="bg-white/5 p-2 rounded">
+              <div className="text-[var(--text-muted)]">Trades</div>
+              <div className="font-bold">{data.edgeHunter.trades}</div>
+            </div>
+            <div className="bg-white/5 p-2 rounded">
+              <div className="text-[var(--text-muted)]">Signals</div>
+              <div className="font-bold">{data.edgeHunter.signalsGenerated}</div>
+            </div>
+            <div className="bg-white/5 p-2 rounded">
+              <div className="text-[var(--text-muted)]">Positions</div>
+              <div className="font-bold">{data.edgeHunter.positions}</div>
             </div>
           </div>
-        ))}
-      </div>
+        </div>
 
-      {/* Performance Bars */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-          Capital Allocation
-        </h3>
-        <div className="space-y-4">
-          <div>
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-[var(--text-secondary)]">Max Trade Size</span>
-              <span className="text-[var(--text-primary)] font-medium">$1.00</span>
-            </div>
-            <div className="h-3 rounded-full bg-white/5 overflow-hidden">
-              <div className="h-full bg-purple-500" style={{ width: "100%" }} />
-            </div>
+        {/* Arb Watcher */}
+        <div className="metric-card">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-2xl">⚡</span>
+            <span className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Arb Watcher</span>
           </div>
-          <div>
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-[var(--text-secondary)]">Daily Budget</span>
-              <span className="text-[var(--text-primary)] font-medium">$5.00</span>
+          <div className="text-2xl font-bold text-green-500">{data.arbWatcher.status}</div>
+          <div className="text-xs text-[var(--text-muted)] mt-1">Cross-exchange arbitrage</div>
+          <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
+            <div className="bg-white/5 p-2 rounded">
+              <div className="text-[var(--text-muted)]">Polls</div>
+              <div className="font-bold">{data.arbWatcher.polls}</div>
             </div>
-            <div className="h-3 rounded-full bg-white/5 overflow-hidden">
-              <div className="h-full bg-blue-500" style={{ width: "100%" }} />
+            <div className="bg-white/5 p-2 rounded">
+              <div className="text-[var(--text-muted)]">Kalshi</div>
+              <div className="font-bold">{data.arbWatcher.kalshi_markets}</div>
             </div>
-          </div>
-          <div>
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-[var(--text-secondary)]">Budget Used</span>
-              <span className="text-[var(--text-primary)] font-medium">
-                ${(arbLog.daily_profit + arbLog.daily_loss).toFixed(2)} / $5.00
-              </span>
-            </div>
-            <div className="h-3 rounded-full bg-white/5 overflow-hidden">
-              <div
-                className={`h-full ${arbLog.daily_profit >= arbLog.daily_loss ? "bg-green-500" : "bg-red-500"}`}
-                style={{ width: `${Math.min(((arbLog.daily_profit + arbLog.daily_loss) / 5) * 100, 100)}%` }}
-              />
+            <div className="bg-white/5 p-2 rounded">
+              <div className="text-[var(--text-muted)]">Poly</div>
+              <div className="font-bold">{data.arbWatcher.poly_markets}</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Recent Trades */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-          Recent Trades
-        </h3>
-        {arbLog.recent_trades.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="text-4xl mb-3">🔍</div>
-            <div className="text-[var(--text-secondary)]">
-              No trades yet — watching for 3%+ edge opportunities
-            </div>
-            <div className="text-xs text-[var(--text-muted)] mt-2">
-              {arbLog.polls} polls completed | Last: {arbLog.lastPoll}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {arbLog.recent_trades.slice(0, 10).map((trade, i) => (
+      {/* Recent Simulation Trades */}
+      {data.simulation.recentTrades.length > 0 ? (
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+            📊 Recent Simulation Trades
+          </h3>
+          <div className="space-y-2">
+            {data.simulation.recentTrades.slice(-5).reverse().map((trade, i) => (
               <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-white/5">
-                <div className="w-20 text-sm font-medium text-[var(--text-primary)]">
-                  {trade.simulation ? "🧪" : "💵"} {trade.opportunity}
+                <div className="w-16 text-sm font-medium">
+                  <span className={trade.side === 'yes' ? 'text-green-500' : 'text-red-500'}>
+                    {trade.side.toUpperCase()}
+                  </span>
                 </div>
                 <div className="flex-1">
+                  <div className="text-sm font-medium text-[var(--text-primary)] truncate">
+                    {trade.ticker.slice(0, 40)}...
+                  </div>
                   <div className="text-xs text-[var(--text-muted)]">
-                    Poly: ${trade.poly_price.toFixed(4)} + Kalshi: ${trade.kalshi_price.toFixed(4)}
+                    AI: {(trade.ai_prob * 100).toFixed(0)}% | Market: {(trade.market_prob * 100).toFixed(0)}%
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className={`text-sm font-bold ${trade.edge_percent >= 3 ? "text-green-500" : "text-yellow-500"}`}>
-                    {trade.edge_percent.toFixed(2)}% edge
-                  </div>
-                  <div className="text-xs text-[var(--text-muted)]">
-                    ~${(1 - trade.total_cost).toFixed(4)} profit
+                  <div className="text-sm font-bold">${trade.size.toFixed(2)}</div>
+                  <div className={`text-xs ${trade.edge > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {(trade.edge * 100).toFixed(1)}% edge
                   </div>
                 </div>
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="card p-5 text-center">
+          <div className="text-4xl mb-3">⏳</div>
+          <div className="text-[var(--text-secondary)]">No simulation trades yet</div>
+          <div className="text-xs text-[var(--text-muted)] mt-1">
+            Bot will log hypothetical trades when edges are found
+          </div>
+        </div>
+      )}
 
-      {/* Strategy Info */}
+      {/* AI Signals Status */}
       <div className="grid grid-cols-3 gap-4">
         <div className="card p-4">
-          <div className="text-xs text-[var(--text-muted)] mb-2">⌚ Poll Interval</div>
-          <div className="text-xl font-bold text-[var(--text-primary)]">30 sec</div>
+          <div className="text-xs text-[var(--text-muted)] mb-1">AI Signals</div>
+          <div className="text-xl font-bold">{data.edgeHunter.signalsGenerated}</div>
+          <div className="text-xs text-[var(--text-muted)]">markets analyzed</div>
         </div>
         <div className="card p-4">
-          <div className="text-xs text-[var(--text-muted)] mb-2">📊 Min Edge</div>
-          <div className="text-xl font-bold text-[var(--text-primary)]">3.0%</div>
+          <div className="text-xs text-[var(--text-muted)] mb-1">Last Signal</div>
+          <div className="text-xl font-bold text-[var(--text-primary)]">
+            {data.edgeHunter.lastSignalUpdate ? new Date(data.edgeHunter.lastSignalUpdate).toLocaleTimeString() : "N/A"}
+          </div>
+          <div className="text-xs text-[var(--text-muted)]">HH:MM:SS</div>
         </div>
         <div className="card p-4">
-          <div className="text-xs text-[var(--text-muted)] mb-2">🔄 Rotation</div>
-          <div className="text-xl font-bold text-[var(--text-primary)]">Weekly</div>
+          <div className="text-xs text-[var(--text-muted)] mb-1">Mode</div>
+          <div className="text-xl font-bold text-yellow-500">SIM</div>
+          <div className="text-xs text-[var(--text-muted)]">No real trades</div>
         </div>
       </div>
 
-      {/* Last Updated */}
-      <div className="text-center text-xs text-[var(--text-muted)]">
-        Last poll: {arbLog.lastPoll} | {arbLog.polls} total polls today
-      </div>
+      {loading && <div className="text-center text-[var(--text-muted)]">Loading...</div>}
     </div>
   );
 }
