@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readFileSync, existsSync, readdirSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
 const ARB_LOG_PATH = "/root/.openclaw/workspace/arb-watcher/logs";
@@ -7,94 +7,159 @@ const ARB_LOG_PATH = "/root/.openclaw/workspace/arb-watcher/logs";
 export async function GET() {
   try {
     const result: any = {
-      polls: 0,
-      lastPoll: new Date().toISOString(),
-      status: "Unknown",
-      mode: "Unknown",
-      kalshi_markets: 0,
-      poly_markets: 0,
-      daily_trades: 0,
-      daily_profit: 0,
-      daily_loss: 0,
-      last_edge: 0,
-      recent_trades: [],
+      // Arb Watcher (cross-exchange)
+      arbWatcher: {
+        status: "Unknown",
+        polls: 0,
+        lastPoll: null,
+        kalshi_markets: 0,
+        poly_markets: 0,
+        mode: "Unknown",
+        daily_trades: 0,
+        daily_profit: 0,
+        daily_loss: 0,
+      },
+      // Edge Hunter (AI mispricing)
+      edgeHunter: {
+        status: "Unknown",
+        mode: "Simulation",
+        lastRun: null,
+        signalsGenerated: 0,
+        lastSignalUpdate: null,
+        healthCheck: "Unknown",
+        positions: 0,
+        trades: 0,
+        profit: 0,
+      },
+      // Simulation data
+      simulation: {
+        enabled: true,
+        totalSimTrades: 0,
+        lastSimTrade: null,
+        recentTrades: [],
+        testPeriod: "Apr 10 - Apr 24, 2026",
+        daysRemaining: 13,
+      },
+      // System status
+      containers: {
+        edgeHunter: "Unknown",
+        newsMonitor: "Unknown",
+        arbWatcher: "Unknown",
+      },
     };
 
-    // Read main log file
-    const mainLogPath = join(ARB_LOG_PATH, "arb-watcher.log");
-    if (existsSync(mainLogPath)) {
-      const logContent = readFileSync(mainLogPath, "utf-8");
+    // === ARB WATCHER ===
+    const arbLogPath = join(ARB_LOG_PATH, "arb-watcher.log");
+    if (existsSync(arbLogPath)) {
+      const logContent = readFileSync(arbLogPath, "utf-8");
       const lines = logContent.split("\n").filter(Boolean);
 
-      // Count polls
-      result.polls = lines.filter((l) => l.includes("Polled")).length;
+      result.arbWatcher.polls = lines.filter((l) => l.includes("Polled")).length;
 
-      // Get last poll time
       const pollLines = lines.filter((l) => l.includes("INFO") && l.includes("Polled"));
       if (pollLines.length > 0) {
         const lastLine = pollLines[pollLines.length - 1];
         const match = lastLine.match(/^(\d{4}-\d{2}-\d{2}T[\d:]+)/);
-        if (match) result.lastPoll = match[1];
-      }
+        if (match) result.arbWatcher.lastPoll = match[1];
 
-      // Parse poll info
-      if (pollLines.length > 0) {
-        const lastPollLine = pollLines[pollLines.length - 1];
-        const marketsMatch = lastPollLine.match(/Polled (\d+) markets \((\d+) Poly\)/);
+        const marketsMatch = lastLine.match(/Polled (\d+) markets \((\d+) Poly\)/);
         if (marketsMatch) {
-          result.kalshi_markets = parseInt(marketsMatch[1]);
-          result.poly_markets = parseInt(marketsMatch[2]);
+          result.arbWatcher.kalshi_markets = parseInt(marketsMatch[1]);
+          result.arbWatcher.poly_markets = parseInt(marketsMatch[2]);
         }
       }
 
-      // Check status
-      result.status = lines.some((l) => l.includes("Starting Arb Watcher")) ? "Running" : "Stopped";
-
-      // Check if simulation or live
-      result.mode = lines.some((l) => l.includes("No Kalshi API key") || l.includes("simulation"))
-        ? "Simulation"
-        : "Live";
+      result.arbWatcher.status = lines.some((l) => l.includes("Starting Arb Watcher")) ? "Running" : "Stopped";
+      result.arbWatcher.mode = "Simulation";
     }
 
-    // Read today's trade log
-    const today = new Date().toISOString().split("T")[0];
-    const tradeLogPath = join(ARB_LOG_PATH, `trade-log-${today}.json`);
-    if (existsSync(tradeLogPath)) {
-      const tradeContent = readFileSync(tradeLogPath, "utf-8");
-      const trades = JSON.parse(tradeContent);
-      result.recent_trades = trades;
+    // === EDGE HUNTER ===
+    const edgeLogPath = join(ARB_LOG_PATH, "edge-hunter.log");
+    if (existsSync(edgeLogPath)) {
+      const edgeLogContent = readFileSync(edgeLogPath, "utf-8");
+      const edgeLines = edgeLogContent.split("\n").filter(Boolean);
 
-      // Calculate stats
-      result.daily_trades = trades.length;
-      result.daily_profit = trades
-        .filter((t: any) => t.simulation)
-        .reduce((sum: number, t: any) => sum + (1 - t.total_cost), 0);
+      // Check if running
+      if (edgeLines.some((l) => l.includes("Edge Hunter running continuous loop"))) {
+        result.edgeHunter.status = "Running";
+      }
+
+      // Count simulation trades
+      const simTrades = edgeLines.filter((l) => l.includes("[SIMULATION] Logged"));
+      if (simTrades.length > 0) {
+        const lastSim = simTrades[simTrades.length - 1].match(/Total sim trades: (\d+)/);
+        if (lastSim) result.simulation.totalSimTrades = parseInt(lastSim[1]);
+      }
+
+      // Get last run time
+      const runLines = edgeLines.filter((l) => l.includes("Edge Hunter running"));
+      if (runLines.length > 0) {
+        const lastRunMatch = runLines[0].match(/^(\d{4}-\d{2}-\d{2}T[\d:]+)/);
+        if (lastRunMatch) result.edgeHunter.lastRun = lastRunMatch[1];
+      }
+
+      // Check errors
+      const errorLines = edgeLines.filter((l) => l.includes("ERROR"));
+      if (errorLines.length > 0) {
+        result.edgeHunter.status = "Has Errors";
+      }
+
+      // Parse state
+      const statePath = join(ARB_LOG_PATH, "edge_state.json");
+      if (existsSync(statePath)) {
+        try {
+          const state = JSON.parse(readFileSync(statePath, "utf-8"));
+          result.edgeHunter.trades = state.trades || 0;
+          result.edgeHunter.profit = state.profit || 0;
+          result.edgeHunter.positions = state.positions?.length || 0;
+        } catch (e) {}
+      }
     }
 
-    // Read state file
-    const statePath = join(ARB_LOG_PATH, "state.json");
-    if (existsSync(statePath)) {
-      const stateContent = readFileSync(statePath, "utf-8");
-      const state = JSON.parse(stateContent);
-      result.daily_trades = state.trades || 0;
-      result.daily_profit = state.profit || 0;
-      result.daily_loss = state.loss || 0;
+    // === SIGNALS ===
+    const signalsPath = join(ARB_LOG_PATH, "edge_signals.json");
+    if (existsSync(signalsPath)) {
+      try {
+        const signals = JSON.parse(readFileSync(signalsPath, "utf-8"));
+        result.edgeHunter.signalsGenerated = Object.keys(signals.signals || {}).length;
+        result.edgeHunter.lastSignalUpdate = signals.timestamp || null;
+      } catch (e) {}
     }
 
-    // Check container status
-    // Note: This would need to be fetched differently in production
+    // === SIMULATION TRADES ===
+    const simPath = join(ARB_LOG_PATH, "simulation_trades.json");
+    if (existsSync(simPath)) {
+      try {
+        const trades = JSON.parse(readFileSync(simPath, "utf-8"));
+        result.simulation.totalSimTrades = trades.length;
+        result.simulation.recentTrades = trades.slice(-10).map((t: any) => ({
+          ticker: t.ticker,
+          side: t.side,
+          size: t.size,
+          ai_prob: t.ai_prob,
+          market_prob: t.market_prob,
+          edge: t.edge_abs,
+          timestamp: t.timestamp,
+        }));
+        if (trades.length > 0) {
+          result.simulation.lastSimTrade = trades[trades.length - 1].timestamp;
+        }
+      } catch (e) {}
+    }
+
+    // === TEST SUMMARY ===
+    const summaryPath = join(ARB_LOG_PATH, "test_summary.json");
+    if (existsSync(summaryPath)) {
+      try {
+        const summary = JSON.parse(readFileSync(summaryPath, "utf-8"));
+        result.simulation.daysRemaining = summary.days_remaining || 0;
+        result.simulation.testPeriod = summary.test_period || "Apr 10 - Apr 24";
+      } catch (e) {}
+    }
 
     return NextResponse.json(result);
   } catch (error) {
     console.error("Arb API error:", error);
-    return NextResponse.json(
-      {
-        error: "Could not fetch arb data",
-        status: "Error",
-        polls: 0,
-        daily_trades: 0,
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Could not fetch arb data" }, { status: 500 });
   }
 }

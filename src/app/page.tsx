@@ -12,6 +12,7 @@ import MemoryView from "@/components/MemoryView";
 import LogsView from "@/components/LogsView";
 import CostView from "@/components/CostView";
 import ArbView from "@/components/ArbView";
+import TradingView from "@/components/TradingView";
 
 type TabId =
   | "calendar"
@@ -23,7 +24,8 @@ type TabId =
   | "social"
   | "logs"
   | "cost"
-  | "arb";
+  | "arb"
+  | "trading";
 
 class ErrorBoundary extends Component<{ children: ReactNode; label: string }, { error: Error | null }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -87,6 +89,9 @@ export default function Home() {
           </ErrorBoundary>
           <ErrorBoundary label="Arb Watcher">
             {activeTab === "arb" && <ArbView />}
+          </ErrorBoundary>
+          <ErrorBoundary label="Trading">
+            {activeTab === "trading" && <TradingView />}
           </ErrorBoundary>
         </div>
       </main>

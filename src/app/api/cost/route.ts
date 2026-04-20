@@ -161,6 +161,15 @@ export async function GET(request: Request) {
         outputTokens: e.outputTokens,
       }));
 
+    // Budget calculations
+    const mmUsed = Object.entries(byProvider)
+      .filter(([p]) => p.includes('minimax'))
+      .reduce((s, [, v]) => s + v.cost, 0);
+    const openaiUsed = Object.entries(byProvider)
+      .filter(([p]) => p.includes('openai'))
+      .reduce((s, [, v]) => s + v.cost, 0);
+    const openaiLimit = 10;
+
     const result = {
       period,
       startDate: start.toISOString().split('T')[0],
@@ -181,20 +190,19 @@ export async function GET(request: Request) {
       budgetStatus: {
         minimax: {
           limit: 20,
-          used: Object.entries(byProvider)
-            .filter(([p]) => p.includes('minimax'))
-            .reduce((s, [, v]) => s + v.cost, 0),
-          remaining: 20,
-          percentUsed: 0,
-        }
+          used: mmUsed,
+          remaining: Math.max(0, 20 - mmUsed),
+          percentUsed: (mmUsed / 20) * 100,
+        },
+        openai: {
+          limit: openaiLimit,
+          used: openaiUsed,
+          remaining: Math.max(0, openaiLimit - openaiUsed),
+          percentUsed: (openaiUsed / openaiLimit) * 100,
+        },
       },
       generatedAt: new Date().toISOString(),
     };
-
-    // Fix minimax budget remaining/percent
-    const mmUsed = result.budgetStatus.minimax.used;
-    result.budgetStatus.minimax.remaining = Math.max(0, 20 - mmUsed);
-    result.budgetStatus.minimax.percentUsed = (mmUsed / 20) * 100;
 
     return NextResponse.json(result);
   } catch (error) {

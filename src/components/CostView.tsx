@@ -27,7 +27,7 @@ interface CostData {
   byProvider: Record<string, { cost: number; calls: number }>;
   byDay: Record<string, { cost: number; calls: number }>;
   topCalls: CostCall[];
-  budgetStatus: { minimax: { limit: number; used: number; remaining: number; percentUsed: number } };
+  budgetStatus: { minimax: { limit: number; used: number; remaining: number; percentUsed: number }; openai: { limit: number; used: number; remaining: number; percentUsed: number } };
 }
 
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6'];
@@ -96,10 +96,12 @@ export default function CostView() {
     );
   }
 
-  const budget = costData.budgetStatus.minimax;
-  const budgetPercent = budget.percentUsed || 0;
-  const isBudgetWarning = budgetPercent > 75;
-  const isBudgetCritical = budgetPercent > 90;
+  const budgetMM = costData.budgetStatus.minimax;
+  const budgetOA = costData.budgetStatus.openai;
+  const mmWarn = budgetMM.percentUsed > 75;
+  const mmCrit = budgetMM.percentUsed > 90;
+  const oaWarn = budgetOA.percentUsed > 75;
+  const oaCrit = budgetOA.percentUsed > 90;
 
   const modelChartData = Object.entries(costData.byModel)
     .map(([name, data]) => ({
@@ -152,24 +154,47 @@ export default function CostView() {
         </select>
       </div>
 
-      {/* Budget Alert */}
-      {isBudgetWarning && (
-        <div className={`card p-4 border-2 ${isBudgetCritical ? "border-red-500" : "border-yellow-500"}`}>
+      {/* MiniMax Budget Alert */}
+      {mmWarn && (
+        <div className={`card p-4 border-2 ${mmCrit ? 'border-red-500' : 'border-yellow-500'}`}>
           <div className="flex items-center gap-3">
-            <span className="text-2xl">{isBudgetCritical ? "🚨" : "⚠️"}</span>
+            <span className="text-2xl">{mmCrit ? '🚨' : '⚠️'}</span>
             <div>
               <div className="font-semibold text-[var(--text-primary)]">
-                {isBudgetCritical ? "MiniMax Budget Critical!" : "MiniMax Budget Warning"}
+                {mmCrit ? 'MiniMax Budget Critical!' : 'MiniMax Budget Warning'}
               </div>
               <div className="text-sm text-[var(--text-secondary)]">
-                Used {formatCurrency(budget.used)} of {formatCurrency(budget.limit)} ({budgetPercent.toFixed(1)}%) — {formatCurrency(budget.remaining)} remaining
+                Used {formatCurrency(budgetMM.used)} of {formatCurrency(budgetMM.limit)} ({budgetMM.percentUsed.toFixed(1)}%) — {formatCurrency(budgetMM.remaining)} remaining
               </div>
             </div>
           </div>
           <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden">
             <div
-              className={`h-full transition-all ${isBudgetCritical ? "bg-red-500" : "bg-yellow-500"}`}
-              style={{ width: `${Math.min(100, budgetPercent)}%` }}
+              className={`h-full transition-all ${mmCrit ? 'bg-red-500' : 'bg-yellow-500'}`}
+              style={{ width: `${Math.min(100, budgetMM.percentUsed)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* OpenAI Budget Alert */}
+      {oaWarn && (
+        <div className={`card p-4 border-2 ${oaCrit ? 'border-red-500' : 'border-yellow-500'}`}>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{oaCrit ? '🚨' : '⚠️'}</span>
+            <div>
+              <div className="font-semibold text-[var(--text-primary)]">
+                {oaCrit ? 'OpenAI Budget Critical!' : 'OpenAI Budget Warning'}
+              </div>
+              <div className="text-sm text-[var(--text-secondary)]">
+                Used {formatCurrency(budgetOA.used)} of {formatCurrency(budgetOA.limit)} ({budgetOA.percentUsed.toFixed(1)}%) — {formatCurrency(budgetOA.remaining)} remaining
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className={`h-full transition-all ${oaCrit ? 'bg-red-500' : 'bg-yellow-500'}`}
+              style={{ width: `${Math.min(100, budgetOA.percentUsed)}%` }}
             />
           </div>
         </div>

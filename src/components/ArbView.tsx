@@ -26,6 +26,7 @@ interface ArbViewData {
     mode: string;
     lastRun: string;
     signalsGenerated: number;
+    lastSignalUpdate?: string | null;
     healthCheck: string;
     positions: number;
     trades: number;
@@ -34,7 +35,7 @@ interface ArbViewData {
   simulation: {
     enabled: boolean;
     totalSimTrades: number;
-    lastSimTrade: string;
+    lastSimTrade: string | null;
     recentTrades: SimTrade[];
     testPeriod: string;
     daysRemaining: number;
