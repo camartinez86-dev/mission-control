@@ -11,7 +11,9 @@ type TabId =
   | "logs"
   | "cost"
   | "arb"
-  | "trading";
+  | "trading"
+  | "fyifinds"
+  | "selfpatch";
 
 const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: "calendar", label: "Calendar", icon: "📅" },
@@ -25,6 +27,8 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: "cost", label: "Cost", icon: "💰" },
   { id: "arb", label: "Arb Watcher", icon: "📈" },
   { id: "trading", label: "Trading", icon: "📊" },
+  { id: "fyifinds", label: "FYIFinds", icon: "📱" },
+  { id: "selfpatch", label: "Self-Patch", icon: "🔧" },
 ];
 
 const statusItems = [

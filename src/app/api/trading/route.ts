@@ -200,7 +200,7 @@ export async function GET() {
     // === BOT SCANNER STATUS ===
     // Try running a quick status check via docker
     let botRunning = false;
-    let lastScanTime = logEntries.length > 0 ? logEntries[logEntries.length - 1].timestamp : null;
+    const lastScanTime = logEntries.length > 0 ? logEntries[logEntries.length - 1].timestamp : null;
 
     try {
       const psOutput = execSync('docker ps --filter name=edge-hunter --format "{{.Status}}" 2>/dev/null', {

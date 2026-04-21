@@ -43,12 +43,12 @@ function formatCurrency(amount: number): string {
   return "$" + amount.toFixed(4);
 }
 
-const CustomTooltip = ({ active, payload }: any) => {
+const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name?: string; value?: number }> }) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-[var(--bg-card)] border border-white/10 rounded px-3 py-2 text-sm">
         <p className="text-[var(--text-primary)]">{payload[0].name}</p>
-        <p className="text-green-500">{formatCurrency(payload[0].value)}</p>
+        <p className="text-green-500">{formatCurrency(payload[0].value ?? 0)}</p>
       </div>
     );
   }

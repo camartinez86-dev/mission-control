@@ -13,6 +13,8 @@ import LogsView from "@/components/LogsView";
 import CostView from "@/components/CostView";
 import ArbView from "@/components/ArbView";
 import TradingView from "@/components/TradingView";
+import FYIFindsView from "@/components/FYIFindsView";
+import SelfPatchView from "@/components/SelfPatchView";
 
 type TabId =
   | "calendar"
@@ -25,7 +27,9 @@ type TabId =
   | "logs"
   | "cost"
   | "arb"
-  | "trading";
+  | "trading"
+  | "fyifinds"
+  | "selfpatch";
 
 class ErrorBoundary extends Component<{ children: ReactNode; label: string }, { error: Error | null }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -92,6 +96,12 @@ export default function Home() {
           </ErrorBoundary>
           <ErrorBoundary label="Trading">
             {activeTab === "trading" && <TradingView />}
+          </ErrorBoundary>
+          <ErrorBoundary label="FYIFinds">
+            {activeTab === "fyifinds" && <FYIFindsView />}
+          </ErrorBoundary>
+          <ErrorBoundary label="SelfPatch">
+            {activeTab === "selfpatch" && <SelfPatchView />}
           </ErrorBoundary>
         </div>
       </main>
