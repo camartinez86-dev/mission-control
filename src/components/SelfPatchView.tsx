@@ -24,6 +24,15 @@ interface FeatureEntry {
   status: string;
 }
 
+interface SelfImprovementEntry {
+  ts: string;
+  type: "correction" | "insight" | "best_practice" | "knowledge_gap";
+  summary: string;
+  lesson: string;
+  source: string;
+  relatedError?: string;
+}
+
 function typeColor(type: string) {
   switch (type) {
     case "correction":    return "text-red-400 bg-red-500/15";
@@ -46,8 +55,9 @@ export default function SelfPatchView() {
   const [errors, setErrors] = useState<ErrorEntry[]>([]);
   const [learnings, setLearnings] = useState<LearningEntry[]>([]);
   const [features, setFeatures] = useState<FeatureEntry[]>([]);
+  const [selfImprovement, setSelfImprovement] = useState<SelfImprovementEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"errors" | "learnings" | "features">("errors");
+  const [tab, setTab] = useState<"errors" | "learnings" | "features" | "self-improvement">("errors");
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -59,11 +69,11 @@ export default function SelfPatchView() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch via API routes that read the workspace files
-      const [eRes, lRes, fRes] = await Promise.allSettled([
+      const [eRes, lRes, fRes, siRes] = await Promise.allSettled([
         fetch("/api/docs?path=.learnings/ERRORS.md"),
         fetch("/api/docs?path=.learnings/LEARNINGS.md"),
         fetch("/api/docs?path=.learnings/FEATURE_REQUESTS.md"),
+        fetch("/api/docs?path=self-improving/corrections.md"),
       ]);
 
       // Parse errors
@@ -107,6 +117,27 @@ export default function SelfPatchView() {
           if (m) entries.push({ ts: m[1], text: m[2], priority: m[3], status: m[4] });
         }
         setFeatures(entries.reverse().slice(0, 50));
+      }
+
+      // Parse self-improvement corrections
+      if (siRes.status === "fulfilled" && siRes.value.ok) {
+        const text = await siRes.value.text();
+        const lines = text.split("\n");
+        const entries: SelfImprovementEntry[] = [];
+        for (const line of lines) {
+          const m = line.match(/^\[([^\]]+)\] (\w+) \| ([^|]+) → (.+)/);
+          if (m) {
+            const type = m[2].toLowerCase() as SelfImprovementEntry["type"];
+            entries.push({
+              ts: m[1],
+              type,
+              summary: m[3].trim(),
+              lesson: m[4].trim(),
+              source: "corrections.md",
+            });
+          }
+        }
+        setSelfImprovement(entries.reverse().slice(0, 50));
       }
 
       setLastRefresh(new Date());
@@ -153,9 +184,9 @@ export default function SelfPatchView() {
             </span>
           </div>
           <div className="segment-control">
-            {(["errors", "learnings", "features"] as const).map(t => (
+            {(["errors", "learnings", "features", "self-improvement"] as const).map(t => (
               <button key={t} onClick={() => setTab(t)} className={`segment-btn ${tab === t ? "active" : ""}`}>
-                {t === "errors" ? "Errors" : t === "learnings" ? "Learnings" : "Features"}
+                {t === "errors" ? "Errors" : t === "learnings" ? "Learnings" : t === "features" ? "Features" : "Self-Improvement"}
               </button>
             ))}
           </div>
@@ -308,6 +339,46 @@ export default function SelfPatchView() {
                     {f.status}
                   </span>
                   <span className="text-xs text-[var(--text-muted)] shrink-0">{f.ts}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "self-improvement" && (
+        <>
+          <div className="flex items-center gap-3 mb-3">
+            <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest">Self-Improvement Log</h3>
+            <div className="flex-1 h-px bg-white/5" />
+            {selfImprovement.filter(e => e.ts.includes("2026-04-29")).length > 0 && (
+              <span className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-bold">
+                {selfImprovement.filter(e => e.ts.includes("2026-04-29")).length} today
+              </span>
+            )}
+          </div>
+          {selfImprovement.length === 0 ? (
+            <div className="card p-8 text-center">
+              <div className="text-3xl mb-2">🔄</div>
+              <div className="text-[var(--text-primary)] font-semibold">No self-improvement entries</div>
+              <div className="text-xs text-[var(--text-muted)] mt-1">Corrections, insights, and lessons learned get logged here automatically</div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {selfImprovement.map((si, i) => (
+                <div key={i} className="card p-4 flex items-start gap-3">
+                  <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded uppercase ${typeColor(si.type)}`}>
+                    {si.type}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[var(--text-primary)]">{si.summary}</div>
+                    <div className="text-xs text-[var(--text-secondary)] mt-1">{si.lesson}</div>
+                    <div className="text-xs text-[var(--text-muted)] mt-1.5 flex items-center gap-2">
+                      <span>{si.source}</span>
+                      {si.relatedError && <span>· Related: {si.relatedError}</span>}
+                      <span>· {si.ts}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
