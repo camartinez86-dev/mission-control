@@ -1,269 +1,262 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface LogEntry {
   timestamp: string;
   level: string;
   message: string;
+  source: string;
 }
 
-interface Container {
+interface LogFile {
+  name: string;
+  exists: boolean;
+  size: string;
+}
+
+interface ContainerInfo {
   name: string;
   status: string;
-  uptime: string;
   cpu: string;
   memory: string;
 }
 
-const sampleLogs: LogEntry[] = [
-  {
-    timestamp: "14:52:01",
-    level: "INFO",
-    message: "Gateway started successfully on ws://127.0.0.1:18789",
-  },
-  {
-    timestamp: "14:52:02",
-    level: "INFO",
-    message: "Dashboard available at http://127.0.0.1:18789/",
-  },
-  {
-    timestamp: "14:52:30",
-    level: "INFO",
-    message: "Cron job 'Daily Morning Report' completed in 44.5s",
-  },
-  {
-    timestamp: "14:53:15",
-    level: "WARN",
-    message:
-      "Session 'agent:main:telegram:direct:5548286268' taking longer than expected",
-  },
-  {
-    timestamp: "14:54:00",
-    level: "INFO",
-    message: "Heartbeat cycle completed - 4 tasks executed",
-  },
-  {
-    timestamp: "14:55:22",
-    level: "ERROR",
-    message: "Failed to fetch weather data: timeout after 10s",
-  },
-  {
-    timestamp: "14:55:30",
-    level: "INFO",
-    message: "Retry successful for weather fetch",
-  },
-  {
-    timestamp: "14:56:00",
-    level: "INFO",
-    message: "Cron job 'Daily GitHub Backup' completed in 12.2s",
-  },
-  {
-    timestamp: "14:57:00",
-    level: "INFO",
-    message: "Quality check found 0 issues",
-  },
-  {
-    timestamp: "14:58:00",
-    level: "EVENT",
-    message: "Telegram message received from Carlos Martinez",
-  },
-];
+interface CronJob {
+  name: string;
+  nextRun: string;
+  lastStatus: string;
+  errors: number;
+}
 
-const sampleContainers: Container[] = [
-  {
-    name: "openclaw-gateway",
-    status: "running",
-    uptime: "2d 14h",
-    cpu: "7.8%",
-    memory: "635 MB",
-  },
-  {
-    name: "mission-control",
-    status: "running",
-    uptime: "1d 3h",
-    cpu: "2.1%",
-    memory: "218 MB",
-  },
-  {
-    name: "postgres-db",
-    status: "running",
-    uptime: "5d 8h",
-    cpu: "1.2%",
-    memory: "89 MB",
-  },
-];
+interface LogsData {
+  logs: LogEntry[];
+  logFiles: LogFile[];
+  containers: ContainerInfo[];
+  cronJobs: CronJob[];
+  generatedAt: string;
+}
 
-const sampleJobs = [
-  { name: "Daily Morning Report", nextRun: "in 4 hours", status: "ok" },
-  { name: "GitHub Workspace Backup", nextRun: "in 6 hours", status: "ok" },
-  { name: "Quality Check", nextRun: "in 8 hours", status: "ok" },
-  { name: "Payroll P8 Due", nextRun: "in 12 hours", status: "ok" },
-];
-
-const levelColors: Record<string, string> = {
-  INFO: "text-blue-400",
-  WARN: "text-yellow-400",
-  ERROR: "text-red-400",
-  EVENT: "text-purple-400",
+const levelColor: Record<string, string> = {
+  INFO:    "text-blue-400",
+  WARN:    "text-yellow-400",
+  WARNING: "text-yellow-400",
+  ERROR:   "text-red-400",
+  DEBUG:   "text-gray-500",
+  EVENT:   "text-purple-400",
 };
 
-export default function LogsView() {
-  const [activeTab, setActiveTab] = useState<
-    "all" | "errors" | "warnings" | "info" | "events"
-  >("all");
-  const [autoRefresh, setAutoRefresh] = useState(true);
+const sourceColor: Record<string, string> = {
+  "edge-hunter":  "text-emerald-400",
+  "arb-watcher":  "text-blue-400",
+  "news-monitor": "text-purple-400",
+  "health-check": "text-yellow-400",
+  "analysis":     "text-orange-400",
+};
 
-  const filteredLogs =
-    activeTab === "all"
-      ? sampleLogs
-      : sampleLogs.filter((log) => {
-          if (activeTab === "errors") return log.level === "ERROR";
-          if (activeTab === "warnings") return log.level === "WARN";
-          if (activeTab === "info") return log.level === "INFO";
-          if (activeTab === "events") return log.level === "EVENT";
-          return true;
-        });
+const LOG_SOURCES = ["all", "edge-hunter", "arb-watcher", "news-monitor", "health-check", "analysis"];
+
+export default function LogsView() {
+  const [data, setData] = useState<LogsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [source, setSource] = useState("all");
+  const [levelFilter, setLevelFilter] = useState("all");
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  const fetchLogs = async () => {
+    try {
+      const res = await fetch(`/api/logs?source=${source}&limit=150`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json: LogsData = await res.json();
+      setData(json);
+      setLastRefresh(new Date());
+    } catch (err) {
+      console.error("Failed to load logs:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(fetchLogs, 10000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh, source]);
+
+  const filteredLogs = (data?.logs ?? []).filter((l) => {
+    if (levelFilter === "all") return true;
+    const lvl = l.level?.toUpperCase();
+    if (levelFilter === "errors") return lvl === "ERROR";
+    if (levelFilter === "warnings") return lvl === "WARN" || lvl === "WARNING";
+    if (levelFilter === "info") return lvl === "INFO";
+    return true;
+  });
+
+  const errorCount = (data?.logs ?? []).filter(l => l.level?.toUpperCase() === "ERROR").length;
+  const warnCount  = (data?.logs ?? []).filter(l => ["WARN","WARNING"].includes(l.level?.toUpperCase())).length;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
-            Logs
-          </h2>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">📋 Logs</h2>
           <p className="text-sm text-[var(--text-secondary)]">
-            System logs and monitoring
+            Live system logs · 10s refresh
+            {lastRefresh && <span className="ml-2 text-[var(--text-muted)]">· {lastRefresh.toLocaleTimeString()}</span>}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="px-3 py-1.5 rounded-lg bg-white/5 text-sm text-[var(--text-secondary)] hover:bg-white/10 flex items-center gap-2">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M23 4v6h-6M1 20v-6h6" />
-              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-            </svg>
-            Refresh
-          </button>
+        <div className="flex items-center gap-2">
+          {errorCount > 0 && (
+            <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-bold">
+              {errorCount} errors
+            </span>
+          )}
+          {warnCount > 0 && (
+            <span className="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold">
+              {warnCount} warnings
+            </span>
+          )}
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 ${
-              autoRefresh
-                ? "bg-green-500/20 text-green-400"
-                : "bg-white/5 text-[var(--text-secondary)]"
+            className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-2 transition-colors ${
+              autoRefresh ? "bg-green-500/20 text-green-400" : "bg-white/5 text-[var(--text-secondary)]"
             }`}
           >
-            <span
-              className={`w-2 h-2 rounded-full ${autoRefresh ? "bg-green-500 animate-pulse" : "bg-gray-500"}`}
-            />
-            Auto-refresh
+            <span className={`w-2 h-2 rounded-full ${autoRefresh ? "bg-green-400 animate-pulse" : "bg-gray-500"}`} />
+            {autoRefresh ? "Live" : "Paused"}
+          </button>
+          <button onClick={fetchLogs} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs transition-colors">
+            ↻ Refresh
           </button>
         </div>
       </div>
 
-      {/* Log Viewer */}
-      <div className="card p-4">
-        {/* Tabs */}
-        <div className="segment-control mb-4">
-          {(["all", "errors", "warnings", "info", "events"] as const).map(
-            (tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`segment-btn capitalize ${activeTab === tab ? "active" : ""}`}
-              >
-                {tab}
-              </button>
-            ),
-          )}
-        </div>
-
-        {/* Log entries */}
-        <div className="bg-black/50 rounded-lg p-4 font-mono text-xs h-80 overflow-y-auto">
-          {filteredLogs.map((log, i) => (
-            <div
-              key={i}
-              className="flex gap-3 py-1 hover:bg-white/5 px-2 -mx-2 rounded"
-            >
-              <span className="text-[var(--text-muted)]">{log.timestamp}</span>
-              <span className={`font-semibold ${levelColors[log.level]}`}>
-                [{log.level}]
-              </span>
-              <span className="text-[var(--text-secondary)] flex-1">
-                {log.message}
-              </span>
+      {/* Log file status */}
+      {data?.logFiles && (
+        <div className="flex flex-wrap gap-2">
+          {data.logFiles.map((f) => (
+            <div key={f.name} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
+              f.exists ? "bg-emerald-500/10 text-emerald-400" : "bg-white/5 text-[var(--text-muted)]"
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${f.exists ? "bg-emerald-400" : "bg-gray-600"}`} />
+              {f.name} {f.exists ? `· ${f.size}` : "· missing"}
             </div>
           ))}
         </div>
+      )}
+
+      {/* Source + Level filters */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="segment-control">
+          {(["all", "errors", "warnings", "info"] as const).map(t => (
+            <button key={t} onClick={() => setLevelFilter(t)}
+              className={`segment-btn capitalize ${levelFilter === t ? "active" : ""}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <select
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          className="px-3 py-1.5 rounded-lg bg-white/5 text-xs text-[var(--text-secondary)] border border-white/10 focus:outline-none"
+        >
+          {LOG_SOURCES.map(s => (
+            <option key={s} value={s}>{s === "all" ? "All sources" : s}</option>
+          ))}
+        </select>
       </div>
 
-      {/* Containers & Jobs */}
+      {/* Log terminal */}
+      <div className="card p-4">
+        <div
+          ref={logRef}
+          className="bg-black/60 rounded-lg p-4 font-mono text-xs h-80 overflow-y-auto space-y-0.5"
+        >
+          {loading ? (
+            <div className="text-[var(--text-muted)] animate-pulse">Loading logs…</div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="text-[var(--text-muted)]">No log entries found.</div>
+          ) : (
+            filteredLogs.map((log, i) => (
+              <div key={i} className="flex gap-3 py-0.5 hover:bg-white/5 px-1 -mx-1 rounded">
+                <span className="text-[var(--text-muted)] shrink-0">{log.timestamp}</span>
+                <span className={`shrink-0 font-bold ${sourceColor[log.source] ?? "text-gray-400"}`}>
+                  [{log.source}]
+                </span>
+                <span className={`shrink-0 font-semibold ${levelColor[log.level?.toUpperCase()] ?? "text-gray-400"}`}>
+                  {log.level}
+                </span>
+                <span className="text-[var(--text-secondary)] flex-1 break-all">{log.message}</span>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="mt-2 text-xs text-[var(--text-muted)] text-right">
+          {filteredLogs.length} entries
+        </div>
+      </div>
+
+      {/* Containers + Cron */}
       <div className="grid grid-cols-2 gap-4">
         {/* Containers */}
         <div className="card p-5">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-            Containers
-          </h3>
-          <div className="space-y-2">
-            {sampleContainers.map((container, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 p-3 rounded-lg bg-white/5"
-              >
-                <span
-                  className={`status-dot ${container.status === "running" ? "active" : "error"}`}
-                />
-                <div className="flex-1">
-                  <span className="text-sm font-medium text-[var(--text-primary)]">
-                    {container.name}
-                  </span>
-                </div>
-                <div className="text-right text-xs">
-                  <div className="text-[var(--text-secondary)]">
-                    {container.cpu}
+          <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4">Docker Containers</h3>
+          {!data?.containers || data.containers.length === 0 ? (
+            <div className="text-xs text-[var(--text-muted)]">No container data</div>
+          ) : (
+            <div className="space-y-2">
+              {data.containers.map((c, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-white/5">
+                  <span className={`status-dot ${c.status === "running" ? "active" : "error"}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[var(--text-primary)] truncate">{c.name}</div>
+                    <div className="text-xs text-[var(--text-muted)]">{c.status}</div>
                   </div>
-                  <div className="text-[var(--text-muted)]">
-                    {container.memory}
+                  <div className="text-right text-xs shrink-0">
+                    <div className="text-[var(--text-secondary)]">{c.cpu}</div>
+                    <div className="text-[var(--text-muted)]">{c.memory}</div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Scheduled Jobs */}
+        {/* Cron Jobs */}
         <div className="card p-5">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-            Scheduled Jobs
-          </h3>
-          <div className="space-y-2">
-            {sampleJobs.map((job, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 p-3 rounded-lg bg-white/5"
-              >
-                <span
-                  className={`status-dot ${job.status === "ok" ? "active" : "warning"}`}
-                />
-                <div className="flex-1">
-                  <span className="text-sm font-medium text-[var(--text-primary)]">
-                    {job.name}
-                  </span>
+          <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4">Cron Jobs</h3>
+          {!data?.cronJobs || data.cronJobs.length === 0 ? (
+            <div className="text-xs text-[var(--text-muted)]">No cron data available</div>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {data.cronJobs.map((job, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-white/5">
+                  <span className={`status-dot ${job.errors > 0 ? "error" : "active"}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-[var(--text-primary)] truncate">{job.name}</div>
+                    <div className="text-xs text-[var(--text-muted)]">next: {job.nextRun}</div>
+                  </div>
+                  {job.errors > 0 && (
+                    <span className="shrink-0 text-xs text-red-400 font-bold">{job.errors}x</span>
+                  )}
                 </div>
-                <span className="text-xs text-[var(--text-muted)]">
-                  {job.nextRun}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
+      </div>
+
+      <div className="text-center text-xs text-[var(--text-muted)]">
+        Auto-refreshes every 10s · Logs from /workspace/arb-watcher/logs/
       </div>
     </div>
   );
