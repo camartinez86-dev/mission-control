@@ -78,7 +78,8 @@ export default function SelfPatchView() {
 
       // Parse errors
       if (eRes.status === "fulfilled" && eRes.value.ok) {
-        const text = await eRes.value.text();
+        const json = await eRes.value.json();
+        const text: string = json.content ?? "";
         const lines = text.split("\n");
         const patternMap: Record<string, ErrorEntry> = {};
         for (const line of lines) {
@@ -97,7 +98,8 @@ export default function SelfPatchView() {
 
       // Parse learnings
       if (lRes.status === "fulfilled" && lRes.value.ok) {
-        const text = await lRes.value.text();
+        const json = await lRes.value.json();
+        const text: string = json.content ?? "";
         const lines = text.split("\n");
         const entries: LearningEntry[] = [];
         for (const line of lines) {
@@ -109,7 +111,8 @@ export default function SelfPatchView() {
 
       // Parse features
       if (fRes.status === "fulfilled" && fRes.value.ok) {
-        const text = await fRes.value.text();
+        const json = await fRes.value.json();
+        const text: string = json.content ?? "";
         const lines = text.split("\n");
         const entries: FeatureEntry[] = [];
         for (const line of lines) {
@@ -121,7 +124,8 @@ export default function SelfPatchView() {
 
       // Parse self-improvement corrections
       if (siRes.status === "fulfilled" && siRes.value.ok) {
-        const text = await siRes.value.text();
+        const json = await siRes.value.json();
+        const text: string = json.content ?? "";
         const lines = text.split("\n");
         const entries: SelfImprovementEntry[] = [];
         for (const line of lines) {
