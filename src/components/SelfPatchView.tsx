@@ -101,8 +101,8 @@ export default function SelfPatchView() {
         const lines = text.split("\n");
         const entries: LearningEntry[] = [];
         for (const line of lines) {
-          const m = line.match(/^\[([^\]]+)\] (\w+) \| ([^|]+) \| source: (\w+)/);
-          if (m) entries.push({ ts: m[1], type: m[2], text: m[3], source: m[4] });
+          const m = line.match(/^\[([^\]]+)\] (\w+) \| (.+?) \| source: (.+)/);
+          if (m) entries.push({ ts: m[1], type: m[2], text: m[3].replace(/→.+/, '').trim(), source: m[4].trim() });
         }
         setLearnings(entries.reverse().slice(0, 50));
       }
@@ -113,8 +113,8 @@ export default function SelfPatchView() {
         const lines = text.split("\n");
         const entries: FeatureEntry[] = [];
         for (const line of lines) {
-          const m = line.match(/^\[([^\]]+)\] ([^|]+) \| priority: (\w+) \| status: (\w+)/);
-          if (m) entries.push({ ts: m[1], text: m[2], priority: m[3], status: m[4] });
+          const m = line.match(/^\[([^\]]+)\] ([^|]+) \| priority: ([\w]+) \| status: ([\w]+)/);
+          if (m) entries.push({ ts: m[1], text: m[2].trim(), priority: m[3].trim(), status: m[4].trim() });
         }
         setFeatures(entries.reverse().slice(0, 50));
       }
@@ -125,7 +125,7 @@ export default function SelfPatchView() {
         const lines = text.split("\n");
         const entries: SelfImprovementEntry[] = [];
         for (const line of lines) {
-          const m = line.match(/^\[([^\]]+)\] (\w+) \| ([^|]+) → (.+)/);
+          const m = line.match(/^\[([^\]]+)\] (\w+) \| (.+?) →\s*(.+)/);
           if (m) {
             const type = m[2].toLowerCase() as SelfImprovementEntry["type"];
             entries.push({
