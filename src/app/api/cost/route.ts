@@ -55,7 +55,6 @@ function parseSessionsForUsage(start: Date, end: Date): UsageEntry[] {
     for (const line of lines) {
       try {
         const record = JSON.parse(line);
-        // Only look at assistant messages with usage data
         if (record.type !== 'message') continue;
         if (record.message?.role !== 'assistant') continue;
 
@@ -69,7 +68,6 @@ function parseSessionsForUsage(start: Date, end: Date): UsageEntry[] {
         if (!ts || isNaN(ts.getTime())) continue;
         if (ts < start || ts > end) continue;
 
-        // Skip zero-cost zero-token entries (errors/empty)
         const inputTok = usage.input || 0;
         const outputTok = usage.output || 0;
         if (inputTok === 0 && outputTok === 0) continue;
@@ -168,7 +166,15 @@ export async function GET(request: Request) {
     const openaiUsed = Object.entries(byProvider)
       .filter(([p]) => p.includes('openai'))
       .reduce((s, [, v]) => s + v.cost, 0);
+    const modelstudioUsed = Object.entries(byProvider)
+      .filter(([p]) => p.includes('modelstudio'))
+      .reduce((s, [, v]) => s + v.cost, 0);
+    const kimiUsed = Object.entries(byProvider)
+      .filter(([p]) => p.includes('kimi'))
+      .reduce((s, [, v]) => s + v.cost, 0);
     const openaiLimit = 10;
+    const modelstudioLimit = 10; // pay-as-you-go soft cap
+    const kimiLimit = 5; // pay-as-you-go soft cap
 
     const result = {
       period,
@@ -199,6 +205,20 @@ export async function GET(request: Request) {
           used: openaiUsed,
           remaining: Math.max(0, openaiLimit - openaiUsed),
           percentUsed: (openaiUsed / openaiLimit) * 100,
+        },
+        modelstudio: {
+          limit: modelstudioLimit,
+          used: modelstudioUsed,
+          remaining: Math.max(0, modelstudioLimit - modelstudioUsed),
+          percentUsed: (modelstudioUsed / modelstudioLimit) * 100,
+          isPayGo: true,
+        },
+        kimi: {
+          limit: kimiLimit,
+          used: kimiUsed,
+          remaining: Math.max(0, kimiLimit - kimiUsed),
+          percentUsed: (kimiUsed / kimiLimit) * 100,
+          isPayGo: true,
         },
       },
       generatedAt: new Date().toISOString(),

@@ -27,10 +27,15 @@ interface CostData {
   byProvider: Record<string, { cost: number; calls: number }>;
   byDay: Record<string, { cost: number; calls: number }>;
   topCalls: CostCall[];
-  budgetStatus: { minimax: { limit: number; used: number; remaining: number; percentUsed: number }; openai: { limit: number; used: number; remaining: number; percentUsed: number } };
+  budgetStatus: {
+    minimax: { limit: number; used: number; remaining: number; percentUsed: number };
+    openai: { limit: number; used: number; remaining: number; percentUsed: number };
+    modelstudio: { limit: number; used: number; remaining: number; percentUsed: number; isPayGo?: boolean };
+    kimi: { limit: number; used: number; remaining: number; percentUsed: number; isPayGo?: boolean };
+  };
 }
 
-const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6'];
+const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#06b6d4'];
 
 function formatNumber(num: number): string {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
@@ -54,6 +59,37 @@ const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<
   }
   return null;
 };
+
+function BudgetAlert({ label, budget, colorClass, warnColor, critColor }: {
+  label: string;
+  budget: { limit: number; used: number; remaining: number; percentUsed: number };
+  colorClass: string;
+  warnColor: string;
+  critColor: string;
+}) {
+  const warn = budget.percentUsed > 75;
+  const crit = budget.percentUsed > 90;
+  if (!warn) return null;
+  return (
+    <div className={`card p-4 border-2 ${crit ? critColor : warnColor}`}>
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{crit ? '🚨' : '⚠️'}</span>
+        <div>
+          <div className="font-semibold text-[var(--text-primary)]">{label} Budget {crit ? 'Critical!' : 'Warning'}</div>
+          <div className="text-sm text-[var(--text-secondary)]">
+            Used {formatCurrency(budget.used)} of {formatCurrency(budget.limit)} ({budget.percentUsed.toFixed(1)}%) — {formatCurrency(budget.remaining)} remaining
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden">
+        <div
+          className={`h-full transition-all ${crit ? 'bg-red-500' : 'bg-yellow-500'}`}
+          style={{ width: `${Math.min(100, budget.percentUsed)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function CostView() {
   const [costData, setCostData] = useState<CostData | null>(null);
@@ -81,31 +117,19 @@ export default function CostView() {
   };
 
   if (loading && !costData) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">Loading cost data...</div>
-      </div>
-    );
+    return <div className="flex items-center justify-center h-64"><div className="text-[var(--text-secondary)]">Loading cost data...</div></div>;
   }
-
   if (error || !costData) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-red-400">Error: {error || "No data"}</div>
-      </div>
-    );
+    return <div className="flex items-center justify-center h-64"><div className="text-red-400">Error: {error || "No data"}</div></div>;
   }
 
-  const budgetMM = costData.budgetStatus.minimax;
-  const budgetOA = costData.budgetStatus.openai;
-  const mmWarn = budgetMM.percentUsed > 75;
-  const mmCrit = budgetMM.percentUsed > 90;
-  const oaWarn = budgetOA.percentUsed > 75;
-  const oaCrit = budgetOA.percentUsed > 90;
+  const totalCost = costData.totalCost;
+  const totalInput = costData.totalInputTokens;
+  const totalOutput = costData.totalOutputTokens;
 
   const modelChartData = Object.entries(costData.byModel)
     .map(([name, data]) => ({
-      name: name.length > 20 ? name.substring(0, 20) + "..." : name,
+      name: name.length > 22 ? name.substring(0, 22) + "…" : name,
       fullName: name,
       value: data.cost,
       calls: data.calls,
@@ -129,19 +153,13 @@ export default function CostView() {
     }))
     .reverse();
 
-  const totalCost = costData.totalCost;
-  const totalInput = costData.totalInputTokens;
-  const totalOutput = costData.totalOutputTokens;
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold text-[var(--text-primary)]">Cost Tracking</h2>
-          <p className="text-sm text-[var(--text-secondary)]">
-            {costData.startDate} to {costData.endDate}
-          </p>
+          <p className="text-sm text-[var(--text-secondary)]">{costData.startDate} to {costData.endDate}</p>
         </div>
         <select
           value={period}
@@ -154,51 +172,35 @@ export default function CostView() {
         </select>
       </div>
 
-      {/* MiniMax Budget Alert */}
-      {mmWarn && (
-        <div className={`card p-4 border-2 ${mmCrit ? 'border-red-500' : 'border-yellow-500'}`}>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{mmCrit ? '🚨' : '⚠️'}</span>
-            <div>
-              <div className="font-semibold text-[var(--text-primary)]">
-                {mmCrit ? 'MiniMax Budget Critical!' : 'MiniMax Budget Warning'}
-              </div>
-              <div className="text-sm text-[var(--text-secondary)]">
-                Used {formatCurrency(budgetMM.used)} of {formatCurrency(budgetMM.limit)} ({budgetMM.percentUsed.toFixed(1)}%) — {formatCurrency(budgetMM.remaining)} remaining
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className={`h-full transition-all ${mmCrit ? 'bg-red-500' : 'bg-yellow-500'}`}
-              style={{ width: `${Math.min(100, budgetMM.percentUsed)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* OpenAI Budget Alert */}
-      {oaWarn && (
-        <div className={`card p-4 border-2 ${oaCrit ? 'border-red-500' : 'border-yellow-500'}`}>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{oaCrit ? '🚨' : '⚠️'}</span>
-            <div>
-              <div className="font-semibold text-[var(--text-primary)]">
-                {oaCrit ? 'OpenAI Budget Critical!' : 'OpenAI Budget Warning'}
-              </div>
-              <div className="text-sm text-[var(--text-secondary)]">
-                Used {formatCurrency(budgetOA.used)} of {formatCurrency(budgetOA.limit)} ({budgetOA.percentUsed.toFixed(1)}%) — {formatCurrency(budgetOA.remaining)} remaining
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className={`h-full transition-all ${oaCrit ? 'bg-red-500' : 'bg-yellow-500'}`}
-              style={{ width: `${Math.min(100, budgetOA.percentUsed)}%` }}
-            />
-          </div>
-        </div>
-      )}
+      {/* Budget Alerts */}
+      <BudgetAlert
+        label="MiniMax"
+        budget={costData.budgetStatus.minimax}
+        colorClass="bg-purple-500/20"
+        warnColor="border-yellow-500"
+        critColor="border-red-500"
+      />
+      <BudgetAlert
+        label="OpenAI"
+        budget={costData.budgetStatus.openai}
+        colorClass="bg-green-500/20"
+        warnColor="border-yellow-500"
+        critColor="border-red-500"
+      />
+      <BudgetAlert
+        label="ModelStudio (Qwen)"
+        budget={costData.budgetStatus.modelstudio}
+        colorClass="bg-blue-500/20"
+        warnColor="border-yellow-500"
+        critColor="border-red-500"
+      />
+      <BudgetAlert
+        label="Kimi K2.6"
+        budget={costData.budgetStatus.kimi}
+        colorClass="bg-orange-500/20"
+        warnColor="border-yellow-500"
+        critColor="border-red-500"
+      />
 
       {/* Usage Spike Alert */}
       {(costData.totalInputTokens > 500000 || costData.totalCost > 5) && period === 'day' && (
@@ -210,9 +212,7 @@ export default function CostView() {
               <div className="text-sm text-[var(--text-secondary)]">
                 {costData.totalInputTokens.toLocaleString()} input tokens · {formatCurrency(costData.totalCost)} spent today
               </div>
-              <div className="text-xs text-red-400 mt-1">
-                Normal daily: under 500K tokens / under $5 — possible runaway process!
-              </div>
+              <div className="text-xs text-red-400 mt-1">Normal daily: under 500K tokens / under $5</div>
             </div>
           </div>
         </div>
@@ -240,83 +240,51 @@ export default function CostView() {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Cost by Model Pie Chart */}
+        {/* Cost by Model */}
         <div className="card p-5">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-            Cost by Model
-          </h3>
+          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">Cost by Model</h3>
           {modelChartData.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie
-                    data={modelChartData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={70}
-                    label={false}
-                  >
-                    {modelChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
+                  <Pie data={modelChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={false}>
+                    {modelChartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend
-                    formatter={(value) => <span className="text-xs text-[var(--text-secondary)]">{value}</span>}
-                  />
+                  <Legend formatter={(value) => <span className="text-xs text-[var(--text-secondary)]">{value}</span>} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-4 space-y-2">
-                {modelChartData.slice(0, 4).map((item, index) => (
+                {modelChartData.slice(0, 5).map((item, index) => (
                   <div key={item.fullName} className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                      <span className="text-[var(--text-primary)] truncate max-w-[160px]" title={item.fullName}>
-                        {item.fullName}
-                      </span>
+                      <span className="text-[var(--text-primary)] truncate max-w-[160px]" title={item.fullName}>{item.fullName}</span>
                     </div>
                     <span className="text-green-500 font-medium">{formatCurrency(item.value)}</span>
                   </div>
                 ))}
               </div>
             </>
-          ) : (
-            <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">No data</div>
-          )}
+          ) : <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">No data</div>}
         </div>
 
-        {/* Cost by Provider Pie Chart */}
+        {/* Cost by Provider */}
         <div className="card p-5">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-            Cost by Provider
-          </h3>
+          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">Cost by Provider</h3>
           {providerChartData.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie
-                    data={providerChartData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={70}
-                    label={false}
-                  >
-                    {providerChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
+                  <Pie data={providerChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={false}>
+                    {providerChartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend
-                    formatter={(value) => <span className="text-xs text-[var(--text-secondary)]">{value}</span>}
-                  />
+                  <Legend formatter={(value) => <span className="text-xs text-[var(--text-secondary)]">{value}</span>} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-4 space-y-2">
-                {providerChartData.slice(0, 4).map((item, index) => (
+                {providerChartData.slice(0, 5).map((item, index) => (
                   <div key={item.name} className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
@@ -327,31 +295,19 @@ export default function CostView() {
                 ))}
               </div>
             </>
-          ) : (
-            <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">No data</div>
-          )}
+          ) : <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">No data</div>}
         </div>
       </div>
 
       {/* Daily Cost Trend */}
       {dayChartData.length > 1 && (
         <div className="card p-5">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-            Daily Cost Trend
-          </h3>
+          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">Daily Cost Trend</h3>
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={dayChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis
-                dataKey="name"
-                tick={{ fill: "var(--text-muted)", fontSize: 11 }}
-                axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
-              />
-              <YAxis
-                tick={{ fill: "var(--text-muted)", fontSize: 11 }}
-                axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
-                tickFormatter={(v) => `$${v.toFixed(2)}`}
-              />
+              <XAxis dataKey="name" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} />
+              <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
               <Tooltip content={<CustomTooltip />} />
               <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: "#8b5cf6", r: 4 }} />
             </LineChart>
@@ -362,14 +318,12 @@ export default function CostView() {
       {/* Top Expensive Calls */}
       {costData.topCalls && costData.topCalls.length > 0 && (
         <div className="card p-5">
-          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-            Top 5 Expensive Calls
-          </h3>
+          <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">Top 5 Expensive Calls</h3>
           <div className="space-y-2">
             {costData.topCalls.slice(0, 5).map((call, i) => (
               <div key={i} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
                 <div>
-                  <div className="text-sm text-[var(--text-primary)]">{call.model.length > 30 ? call.model.substring(0, 30) + "..." : call.model}</div>
+                  <div className="text-sm text-[var(--text-primary)]">{call.model.length > 30 ? call.model.substring(0, 30) + "…" : call.model}</div>
                   <div className="text-xs text-[var(--text-muted)]">{call.provider}</div>
                 </div>
                 <div className="text-right">
